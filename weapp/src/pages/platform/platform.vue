@@ -62,6 +62,38 @@
 				<text>到期日 <text class="num">{{ o.expire_date || '-' }}</text></text>
 				<text>开户 <text class="num">{{ o.created_at ? o.created_at.slice(0, 10) : '-' }}</text></text>
 			</view>
+			<!-- 机构运营情况（资金/教师/学生） -->
+			<view class="org-oper">
+				<view class="op-title">运营情况</view>
+				<view class="op-row">
+					<view class="op-item">
+						<text class="op-label">本月收入</text>
+						<text class="op-value income">¥{{ fmt(ov(o).month_income) }}</text>
+					</view>
+					<view class="op-item">
+						<text class="op-label">本月支出</text>
+						<text class="op-value expense">¥{{ fmt(ov(o).month_expense) }}</text>
+					</view>
+					<view class="op-item">
+						<text class="op-label">待缴</text>
+						<text class="op-value unpaid">¥{{ fmt(ov(o).unpaid) }}</text>
+					</view>
+				</view>
+				<view class="op-row">
+					<view class="op-item">
+						<text class="op-label">学生</text>
+						<text class="op-value">{{ ov(o).student_count || 0 }}<text class="op-sub">（在读 {{ ov(o).active_student_count || 0 }}）</text></text>
+					</view>
+					<view class="op-item">
+						<text class="op-label">教师</text>
+						<text class="op-value">{{ ov(o).teacher_count || 0 }}</text>
+					</view>
+					<view class="op-item">
+						<text class="op-label">今日打卡</text>
+						<text class="op-value">{{ ov(o).today_attendance || 0 }}</text>
+					</view>
+				</view>
+			</view>
 			<view class="org-actions">
 				<text class="link" @click="openEdit(o)">编辑</text>
 				<text class="link success" @click="openRenew(o)">交费/续费</text>
@@ -370,6 +402,10 @@ export default {
 			if (st === 'normal') return '正常';
 			return '未设置';
 		},
+		ov(o) {
+			// 机构运营概况（兼容旧后端无 overview 字段）
+			return (o && o.overview) || {};
+		},
 		async loadData() {
 			try {
 				this.organizations = await get('/platform/organizations');
@@ -584,6 +620,22 @@ export default {
 	margin-bottom: 14rpx;
 }
 .org-info .num { color: #303133; font-weight: 600; }
+.org-oper {
+	background: #f5f7fa;
+	border-radius: 12rpx;
+	padding: 16rpx 18rpx;
+	margin-bottom: 14rpx;
+}
+.op-title { font-size: 22rpx; color: #909399; margin-bottom: 10rpx; }
+.op-row { display: flex; gap: 10rpx; margin-bottom: 10rpx; }
+.op-row:last-child { margin-bottom: 0; }
+.op-item { flex: 1; }
+.op-label { display: block; font-size: 20rpx; color: #909399; margin-bottom: 4rpx; }
+.op-value { font-size: 26rpx; font-weight: 700; color: #303133; }
+.op-value.income { color: #10b981; }
+.op-value.expense { color: #e6a23c; }
+.op-value.unpaid { color: #ef4444; }
+.op-sub { font-size: 20rpx; color: #909399; font-weight: 400; }
 .org-actions {
 	display: flex;
 	flex-wrap: wrap;

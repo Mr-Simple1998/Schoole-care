@@ -36,6 +36,34 @@
         </el-col>
       </el-row>
 
+      <!-- 全机构运营总览（资金/教师/学生） -->
+      <el-row :gutter="16" class="stat-row stat-card-animated">
+        <el-col :span="6">
+          <el-card shadow="always" class="stat-card">
+            <div class="stat-num">{{ platOverview.student_count ?? 0 }}</div>
+            <div class="stat-label">学生总数（在读 {{ platOverview.active_student_count ?? 0 }}）</div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="always" class="stat-card">
+            <div class="stat-num">{{ platOverview.teacher_count ?? 0 }}</div>
+            <div class="stat-label">教师总数</div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="always" class="stat-card">
+            <div class="stat-num">{{ platOverview.month_income ?? 0 }}</div>
+            <div class="stat-label">本月收入(元)</div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="always" class="stat-card">
+            <div class="stat-num highlight-danger">{{ platOverview.unpaid ?? 0 }}</div>
+            <div class="stat-label">待缴金额(元)</div>
+          </el-card>
+        </el-col>
+      </el-row>
+
       <el-table :data="organizations" stripe>
         <el-table-column prop="name" label="机构名称" min-width="130" />
         <el-table-column prop="code" label="机构编码" width="100" />
@@ -62,6 +90,20 @@
         </el-table-column>
         <el-table-column label="累计交费(元)" width="110">
           <template #default="{ row }"><span class="income-text num-strong">{{ row.total_paid ?? '-' }}</span></template>
+        </el-table-column>
+        <el-table-column label="学生/教师" width="90">
+          <template #default="{ row }">
+            <span>{{ row.overview?.student_count ?? 0 }} / {{ row.overview?.teacher_count ?? 0 }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="本月收入(元)" width="110">
+          <template #default="{ row }"><span class="income-text num-strong">{{ row.overview?.month_income ?? 0 }}</span></template>
+        </el-table-column>
+        <el-table-column label="本月支出(元)" width="110">
+          <template #default="{ row }"><span class="warn-text num-strong">{{ row.overview?.month_expense ?? 0 }}</span></template>
+        </el-table-column>
+        <el-table-column label="待缴(元)" width="100">
+          <template #default="{ row }"><span class="danger-text num-strong">{{ row.overview?.unpaid ?? 0 }}</span></template>
         </el-table-column>
         <el-table-column label="到期状态" width="150">
           <template #default="{ row }">
@@ -302,6 +344,7 @@ import request from '@/utils/request'
 
 const organizations = ref([])
 const stat = ref({})
+const platOverview = ref({})
 const saving = ref(false)
 const statTab = ref('total')
 const createVisible = ref(false)
@@ -371,6 +414,7 @@ function orgStatusText(st, date) {
 async function loadData() {
   organizations.value = await request.get('/platform/organizations')
   stat.value = await request.get('/platform/payments/statistics')
+  platOverview.value = await request.get('/platform/overview')
   renderMonthChart()
 }
 

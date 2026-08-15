@@ -6,7 +6,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Organization, Payment, User, UserRole, PLAN_TYPES
+from ..models import Organization, Payment, User, UserRole, PLAN_TYPES, Student
+from ..models_income import FeeRecord, Invoice
+from ..models_campus import CampusTransaction
+from ..models_learning import Attendance
 from ..security import get_current_platform, hash_password
 
 router = APIRouter()
@@ -83,6 +86,59 @@ def _expire_status(org: Organization) -> str:
     return "normal"
 
 
+def _org_overview(db: Session, org_id: int, month_start: date, today: date) -> dict:
+    """机构运营概况（平台超级管理员视角）：资金（本月收支/待缴）+ 教师 + 学生 + 今日打卡"""
+    # 学生
+    student_count = db.query(Student).filter(Student.org_id == org_id, Student.deleted == False).count()  # noqa: E712
+    active_student_count = db.query(Student).filter(
+        Student.org_id == org_id, Student.deleted == False, Student.status == "在读"  # noqa: E712
+    ).count()
+    # 教师（含校区负责人/校长管理号）
+    teacher_count = db.query(User).filter(
+        User.org_id == org_id,
+        User.is_active == True,  # noqa: E712
+        User.role.in_([UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
+    ).count()
+    # 本月资金：学费收入（按缴费日期）+ 手工收支（按登记日期）
+    tuition = db.query(func.coalesce(func.sum(FeeRecord.amount), 0)).filter(
+        FeeRecord.org_id == org_id,
+        FeeRecord.pay_date >= month_start,
+    ).scalar() or 0
+    manual_income = db.query(func.coalesce(func.sum(CampusTransaction.amount), 0)).filter(
+        CampusTransaction.org_id == org_id,
+        CampusTransaction.kind == "income",
+        CampusTransaction.record_date >= month_start,
+    ).scalar() or 0
+    manual_expense = db.query(func.coalesce(func.sum(CampusTransaction.amount), 0)).filter(
+        CampusTransaction.org_id == org_id,
+        CampusTransaction.kind == "expense",
+        CampusTransaction.record_date >= month_start,
+    ).scalar() or 0
+    # 今日打卡
+    today_attendance = db.query(Attendance).filter(
+        Attendance.date == today, Attendance.org_id == org_id
+    ).count()
+    # 待缴（应收未收）
+    invs = db.query(Invoice).filter(
+        Invoice.org_id == org_id,
+        Invoice.status.in_(["待缴", "部分缴纳"]),
+    ).all()
+    unpaid = sum((inv.amount or 0) - (inv.paid_amount or 0) for inv in invs)
+
+    month_income = round(float(tuition) + float(manual_income), 2)
+    month_expense = round(float(manual_expense), 2)
+    return {
+        "student_count": student_count,
+        "active_student_count": active_student_count,
+        "teacher_count": teacher_count,
+        "month_income": month_income,
+        "month_expense": month_expense,
+        "month_balance": round(month_income - month_expense, 2),
+        "today_attendance": today_attendance,
+        "unpaid": round(unpaid, 2),
+    }
+
+
 def _org_out(o: Organization, db: Session):
     principal = (
         db.query(User)
@@ -90,6 +146,8 @@ def _org_out(o: Organization, db: Session):
         .first()
     )
     expire_date = o.expire_date
+    today = date.today()
+    month_start = today.replace(day=1)
     return {
         "id": o.id,
         "name": o.name,
@@ -112,14 +170,56 @@ def _org_out(o: Organization, db: Session):
             "username": principal.username,
             "name": principal.name,
         } if principal else None,
+        # 机构运营概况（资金/教师/学生）
+        "overview": _org_overview(db, o.id, month_start, today),
     }
 
 
 @router.get("/organizations")
 def list_organizations(current_user: User = Depends(get_current_platform), db: Session = Depends(get_db)):
-    """平台：查看全部机构（校长开户情况），含交费与到期状态"""
+    """平台：查看全部机构（校长开户情况），含交费与到期状态 + 机构运营概况（资金/教师/学生）"""
     orgs = db.query(Organization).order_by(Organization.created_at.desc()).all()
     return [_org_out(o, db) for o in orgs]
+
+
+@router.get("/overview")
+def platform_overview(current_user: User = Depends(get_current_platform), db: Session = Depends(get_db)):
+    """平台：全部机构运营汇总（资金/教师/学生/打卡），用于超级管理员工作台"""
+    orgs = db.query(Organization).all()
+    today = date.today()
+    month_start = today.replace(day=1)
+    org_ids = [o.id for o in orgs]
+
+    student_count = active_student_count = teacher_count = today_attendance = 0
+    month_income = month_expense = unpaid = 0.0
+    for o in orgs:
+        ov = _org_overview(db, o.id, month_start, today)
+        student_count += ov["student_count"]
+        active_student_count += ov["active_student_count"]
+        teacher_count += ov["teacher_count"]
+        today_attendance += ov["today_attendance"]
+        month_income += ov["month_income"]
+        month_expense += ov["month_expense"]
+        unpaid += ov["unpaid"]
+
+    expiring_count = sum(1 for o in orgs if _expire_status(o) == "expiring")
+    expired_count = sum(1 for o in orgs if _expire_status(o) == "expired")
+    total_paid = sum(o.total_paid or 0 for o in orgs)
+
+    return {
+        "org_count": len(orgs),
+        "student_count": student_count,
+        "active_student_count": active_student_count,
+        "teacher_count": teacher_count,
+        "month_income": round(month_income, 2),
+        "month_expense": round(month_expense, 2),
+        "month_balance": round(month_income - month_expense, 2),
+        "today_attendance": today_attendance,
+        "unpaid": round(unpaid, 2),
+        "total_paid": round(total_paid, 2),
+        "expiring_count": expiring_count,
+        "expired_count": expired_count,
+    }
 
 
 @router.post("/organizations")

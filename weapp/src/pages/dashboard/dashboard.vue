@@ -27,6 +27,27 @@
 				</view>
 			</view>
 
+			<!-- 全机构运营汇总（资金/教师/学生） -->
+			<view class="stat-grid">
+				<view class="stat-card is-blue" @click="goPlatform">
+					<view class="stat-top"><text class="stat-label">学生总数</text><text class="stat-emoji">👥</text></view>
+					<text class="stat-num">{{ platOverview.student_count || 0 }}</text>
+					<text class="stat-sub">在读 {{ platOverview.active_student_count || 0 }}</text>
+				</view>
+				<view class="stat-card is-purple" @click="goPlatform">
+					<view class="stat-top"><text class="stat-label">教师总数</text><text class="stat-emoji">👩‍🏫</text></view>
+					<text class="stat-num">{{ platOverview.teacher_count || 0 }}</text>
+				</view>
+				<view class="stat-card is-green" @click="goPlatform">
+					<view class="stat-top"><text class="stat-label">本月收入(元)</text><text class="stat-emoji">💰</text></view>
+					<text class="stat-num">¥{{ fmt(platOverview.month_income) }}</text>
+				</view>
+				<view class="stat-card is-orange" @click="goPlatform">
+					<view class="stat-top"><text class="stat-label">待缴(元)</text><text class="stat-emoji">⚠️</text></view>
+					<text class="stat-num">¥{{ fmt(platOverview.unpaid) }}</text>
+				</view>
+			</view>
+
 			<view class="banner" :class="expiredCount ? 'is-danger' : 'is-info'" @click="goPlatform">
 				<view>
 					<view class="banner-title">{{ expiredCount ? '⚠️ 有机构已到期，请及时续费' : '🏢 机构开户管理' }}</view>
@@ -127,7 +148,8 @@ export default {
 		return {
 			store: useUserStore(),
 			overview: {},
-			organizations: []
+			organizations: [],
+			platOverview: {}
 		};
 	},
 	computed: {
@@ -174,6 +196,7 @@ export default {
 		async loadPlatform() {
 			try {
 				this.organizations = await get('/platform/organizations');
+				this.platOverview = await get('/platform/overview');
 			} catch (e) {}
 		},
 		goStudents() { uni.switchTab({ url: '/pages/student/list' }); },
