@@ -12,26 +12,33 @@
 		</view>
 
 		<view class="card">
-			<view class="menu-item" @click="goIncome" v-if="store.isPrincipal || store.isSubPrincipal">
-				<view class="mi-left"><text class="mi-emoji">💰</text><text>收费管理</text></view>
+			<!-- 平台超级管理员：与 PC 端一致，仅机构开户管理 -->
+			<view class="menu-item" @click="goPlatform" v-if="store.isPlatform">
+				<view class="mi-left"><text class="mi-emoji">🏢</text><text>机构开户管理</text></view>
 				<text class="arrow">›</text>
 			</view>
-			<view class="menu-item" @click="goTeachers" v-if="store.isPrincipal || store.isSubPrincipal">
-				<view class="mi-left"><text class="mi-emoji">👩‍🏫</text><text>教师管理</text></view>
-				<text class="arrow">›</text>
-			</view>
-			<view class="menu-item" @click="goSubjects" v-if="store.isPrincipal">
-				<view class="mi-left"><text class="mi-emoji">📚</text><text>学科管理</text></view>
-				<text class="arrow">›</text>
-			</view>
-			<view class="menu-item" @click="goCampus" v-if="store.isPrincipal || store.isSubPrincipal">
-				<view class="mi-left"><text class="mi-emoji">🏫</text><text>校区管理</text></view>
-				<text class="arrow">›</text>
-			</view>
-			<view class="menu-item" @click="goPoints">
-				<view class="mi-left"><text class="mi-emoji">🏆</text><text>积分管理</text></view>
-				<text class="arrow">›</text>
-			</view>
+			<template v-else>
+				<view class="menu-item" @click="goIncome" v-if="store.isPrincipal || store.isSubPrincipal">
+					<view class="mi-left"><text class="mi-emoji">💰</text><text>收费管理</text></view>
+					<text class="arrow">›</text>
+				</view>
+				<view class="menu-item" @click="goTeachers" v-if="store.isPrincipal || store.isSubPrincipal">
+					<view class="mi-left"><text class="mi-emoji">👩‍🏫</text><text>教师管理</text></view>
+					<text class="arrow">›</text>
+				</view>
+				<view class="menu-item" @click="goSubjects" v-if="store.isPrincipal">
+					<view class="mi-left"><text class="mi-emoji">📚</text><text>学科管理</text></view>
+					<text class="arrow">›</text>
+				</view>
+				<view class="menu-item" @click="goCampus" v-if="store.isPrincipal || store.isSubPrincipal">
+					<view class="mi-left"><text class="mi-emoji">🏫</text><text>校区管理</text></view>
+					<text class="arrow">›</text>
+				</view>
+				<view class="menu-item" @click="goPoints">
+					<view class="mi-left"><text class="mi-emoji">🏆</text><text>积分管理</text></view>
+					<text class="arrow">›</text>
+				</view>
+			</template>
 		</view>
 
 		<button class="logout-btn" @click="doLogout">退出登录</button>
@@ -69,6 +76,7 @@ export default {
 		goSubjects() { uni.navigateTo({ url: '/pages/subjects/subjects' }); },
 		goPoints() { uni.navigateTo({ url: '/pages/points/points' }); },
 		goCampus() { uni.navigateTo({ url: '/pages/campus/campus' }); },
+		goPlatform() { uni.navigateTo({ url: '/pages/platform/platform' }); },
 		doLogout() {
 			uni.showModal({
 				title: '提示',

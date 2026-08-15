@@ -1,7 +1,17 @@
 <template>
 	<view class="page">
-		<!-- 顶部统计 -->
-		<view class="stat-grid" v-if="students.length">
+		<!-- 平台超级管理员：无机构数据，引导进入机构开户管理（与 PC 端一致） -->
+		<view v-if="store.isPlatform" class="platform-tip">
+			<view class="card">
+				<view class="tip-title">🏢 平台账号无机构学生数据</view>
+				<view class="tip-desc">机构开户、续费与流水请在「机构开户管理」中操作；学生数据请使用总校长 / 校长管理号 / 教师账号登录查看。</view>
+				<button class="btn-primary tip-btn" @click="goPlatform">进入机构开户管理</button>
+			</view>
+		</view>
+
+		<template v-else>
+			<!-- 顶部统计 -->
+			<view class="stat-grid" v-if="students.length">
 			<view class="stat-card is-blue">
 				<view class="stat-top">
 					<text class="stat-label">学生总数</text>
@@ -87,6 +97,7 @@
 				</view>
 			</view>
 		</view>
+		</template>
 	</view>
 </template>
 
@@ -108,7 +119,9 @@ export default {
 		};
 	},
 	onShow() {
-		this.loadStudents();
+		if (!this.store.isPlatform) {
+			this.loadStudents();
+		}
 	},
 	computed: {
 		attendNames() {
@@ -150,6 +163,9 @@ export default {
 		},
 		goAdd() {
 			uni.navigateTo({ url: '/pages/student/add' });
+		},
+		goPlatform() {
+			uni.navigateTo({ url: '/pages/platform/platform' });
 		},
 		goDetail(id) {
 			uni.navigateTo({ url: '/pages/student/detail?id=' + id });
@@ -233,6 +249,15 @@ export default {
 	margin-bottom: 6rpx;
 }
 .empty { text-align: center; padding: 80rpx 0; }
+.platform-tip { padding-top: 20rpx; }
+.tip-title { font-size: 32rpx; font-weight: 700; color: #303133; margin-bottom: 12rpx; }
+.tip-desc {
+	font-size: 26rpx;
+	color: #6b7280;
+	line-height: 1.6;
+	margin-bottom: 24rpx;
+}
+.tip-btn { font-size: 28rpx; }
 .attend-btn {
 	margin: 20rpx 0 0;
 	font-size: 26rpx;

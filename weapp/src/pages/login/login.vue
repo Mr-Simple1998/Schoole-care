@@ -45,10 +45,18 @@ export default {
 		// 尝试静默登录（本地 openid 已绑定时直接进入）
 		const store = useUserStore();
 		if (store.token) {
-			uni.switchTab({ url: '/pages/dashboard/dashboard' });
+			this.afterLogin(store);
 		}
 	},
 	methods: {
+		// 平台超级管理员直接进入机构开户管理（与 PC 端一致）；其他角色进入工作台
+		afterLogin(store) {
+			if (store.isPlatform) {
+				uni.reLaunch({ url: '/pages/platform/platform' });
+			} else {
+				uni.switchTab({ url: '/pages/dashboard/dashboard' });
+			}
+		},
 		async doBind() {
 			if (!this.username || !this.password) {
 				uni.showToast({ title: '请输入用户名和密码', icon: 'none' });
@@ -59,7 +67,7 @@ export default {
 				const store = useUserStore();
 				await store.bindLogin(this.username, this.password);
 				uni.showToast({ title: '登录成功', icon: 'success' });
-				setTimeout(() => uni.switchTab({ url: '/pages/dashboard/dashboard' }), 500);
+				setTimeout(() => this.afterLogin(store), 500);
 			} catch (e) {
 				// 错误已由 request 统一提示
 			} finally {

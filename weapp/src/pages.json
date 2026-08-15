@@ -45,6 +45,10 @@
 			"style": { "navigationBarTitleText": "学科管理" }
 		},
 		{
+			"path": "pages/platform/platform",
+			"style": { "navigationBarTitleText": "机构开户管理" }
+		},
+		{
 			"path": "pages/mine/mine",
 			"style": { "navigationBarTitleText": "我的" }
 		}
