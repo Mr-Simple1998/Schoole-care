@@ -179,7 +179,11 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
   - 小程序新增「机构开户管理」页（`weapp/src/pages/platform/platform.vue`，对应 PC `/platform`）：机构列表（校长账号/计费/交费金额/到期状态/启停用/编辑/续费/流水/重置密码）+ 开户流水统计（总金额/按机构汇总/待收款·已到期），全部复用后端 `/api/platform/*` 接口。
   - admin 在小程序登录后 `uni.reLaunch` **直达**机构开户管理页（隐藏 工作台/学生/我的 tab），与 PC 端一致；平台页底部提供退出登录。
   - `weapp/src/pages.json` 注册 `pages/platform/platform`；mine.vue 平台角色显示「机构开户管理」入口；dashboard/学生列表对平台角色做了引导兜底。
-  - ⚠️ 部署状态：**未上传/未部署云托管**（当前 AppID `wxb50df87e7a46f2c6` 为测试号，微信返回「测试号不能使用云服务」，无法开通云开发/云托管/上传体验版）。已备好 `backend/Dockerfile`、`backend/.dockerignore`、`DEPLOY_CLOUD.md`（云托管部署指南，含 CFS 持久化与 WX_APPID/SECRET 配置说明），等真实 AppID 后可继续。
+- **2026-08-16 · 平台超级管理员机构运营总览**：
+  - 后端 `platform.py` 新增 `_org_overview`（本月收支/待缴/学生/在读/教师/今日打卡），机构列表响应带 `overview`；新增 `GET /api/platform/overview` 全机构汇总。
+  - PC `PlatformManage.vue` 增加全机构运营统计卡（学生/教师/本月收入/待缴）+ 表格运营列；小程序 platform 页机构卡片增加「运营情况」区块，工作台平台视图增加运营汇总卡。
+  - 真实 AppID `wxf8b95700bdb6a877` 已写入 `weapp/src/manifest.json`，小程序已构建并**上传体验版 v1.0.0**（274.5KB）。
+  - ⚠️ 部署状态：**云托管后端未部署**（需在云开发控制台建环境+云托管服务，从 GitHub 仓库构建 `backend/Dockerfile`；`backend/.env` 未配置 WX_SECRET，真实登录需在云托管环境变量配置 `WX_APPID`/`WX_SECRET`；部署后把云托管域名填入 `weapp/src/utils/request.js` BASE_URL 并重新构建上传）。详见 `DEPLOY_CLOUD.md`。
 - **2026-08-16 · 角色体系梳理（总校长端 / 校长管理号）**：
   - 新增角色 `sub_principal`（校区负责人·校长管理号）：由总校长在「校区管理」页开号（`POST /campuses/{id}/head` 新建账号或指定教师，角色改为 `SUB_PRINCIPAL`）；权限与旧 `campus_head` 完全一致（存量 campus_head 账号兼容，零迁移）。
   - **总校长（principal）数据范围**：归属校区后（`campus_id` 有值）学生/教师/收支/收入操作均限本校区；未归属（存量）保持全校；校区管理页始终可见全校各校区概况+汇总行（只读总览）。
