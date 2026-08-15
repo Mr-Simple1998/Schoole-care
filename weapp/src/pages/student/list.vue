@@ -1,5 +1,41 @@
 <template>
 	<view class="page">
+		<!-- 顶部统计 -->
+		<view class="stat-grid" v-if="students.length">
+			<view class="stat-card is-blue">
+				<view class="stat-top">
+					<text class="stat-label">学生总数</text>
+					<text class="stat-emoji">👥</text>
+				</view>
+				<text class="stat-num">{{ listStats.total }}</text>
+				<text class="stat-sub">全部学生</text>
+			</view>
+			<view class="stat-card is-green">
+				<view class="stat-top">
+					<text class="stat-label">在读人数</text>
+					<text class="stat-emoji">🎓</text>
+				</view>
+				<text class="stat-num">{{ listStats.active }}</text>
+				<text class="stat-sub">正常在读</text>
+			</view>
+			<view class="stat-card is-orange">
+				<view class="stat-top">
+					<text class="stat-label">剩余课时</text>
+					<text class="stat-emoji">⏳</text>
+				</view>
+				<text class="stat-num">{{ listStats.remain }}</text>
+				<text class="stat-sub">待核销</text>
+			</view>
+			<view class="stat-card is-purple">
+				<view class="stat-top">
+					<text class="stat-label">已核课时</text>
+					<text class="stat-emoji">✅</text>
+				</view>
+				<text class="stat-num">{{ listStats.used }}</text>
+				<text class="stat-sub">累计核销</text>
+			</view>
+		</view>
+
 		<view class="search-bar">
 			<input class="search-input" v-model="keyword" placeholder="搜索姓名/学号" @input="filterList" />
 			<button class="btn-primary add-btn" @click="goAdd">新增</button>
@@ -9,18 +45,23 @@
 			<view v-for="s in filtered" :key="s.id" class="card student-item">
 				<view class="flex" @click="goDetail(s.id)">
 					<view class="avatar">{{ s.name[0] }}</view>
-					<view class="flex-1">
-						<view class="s-name">{{ s.name }}
-							<text class="s-no">{{ s.student_no }}</text>
-							<text v-if="s.status !== '在读'" class="s-status">{{ s.status }}</text>
+					<view class="flex-1 info-row ir-body">
+						<view class="ir-left">
+							<view class="ir-title">{{ s.name }}<text class="s-no">{{ s.student_no }}</text></view>
+							<view class="ir-sub">
+								<text>{{ s.school || '未填写' }}</text>
+								<text v-if="s.grade">{{ s.grade }}</text>
+								<text>教师：{{ s.teacher_name || '未分配' }}</text>
+							</view>
 						</view>
-						<view class="text-muted s-meta">
-							{{ s.school || '' }} {{ s.grade || '' }} · 入学 {{ s.enrollment_date || '-' }}
-						</view>
-						<view class="s-subjects" v-if="s.subjects && s.subjects.length">
-							<text v-for="sub in s.subjects" :key="sub.id" class="sub-tag">{{ sub.name }}</text>
+						<view class="ir-right">
+							<text :class="s.status === '在读' ? 'tag tag-success' : 'tag tag-grey'">{{ s.status || '未知' }}</text>
 						</view>
 					</view>
+				</view>
+				<view class="s-subjects" v-if="s.subjects && s.subjects.length">
+					<text class="sub-label">科目</text>
+					<text v-for="sub in s.subjects" :key="sub.id" class="sub-tag">{{ sub.name }}</text>
 				</view>
 				<button class="btn-primary attend-btn" @click="openAttend(s)">打卡</button>
 			</view>
@@ -76,6 +117,19 @@ export default {
 		attendSubjectName() {
 			const s = this.attendSubjects.find(x => x.id === this.attendSubjectId);
 			return s ? this.attendLabel(s) : '请选择学科';
+		},
+		/* 纯展示：顶部统计卡数据（仅由现有 students 数据派生） */
+		listStats() {
+			let total = this.students.length;
+			let active = 0, used = 0, remain = 0;
+			this.students.forEach(s => {
+				if (s.status === '在读') active++;
+				(s.subject_sessions || []).forEach(ss => {
+					if (typeof ss.used_sessions === 'number') used += ss.used_sessions;
+					if (typeof ss.remaining === 'number') remain += ss.remaining;
+				});
+			});
+			return { total, active, used, remain };
 		}
 	},
 	onPullDownRefresh() {
@@ -132,6 +186,7 @@ export default {
 
 <style scoped>
 .page { padding-bottom: 40rpx; }
+.stat-grid { margin-top: 20rpx; }
 .search-bar {
 	display: flex;
 	padding: 20rpx;
@@ -143,6 +198,7 @@ export default {
 	border-radius: 12rpx;
 	padding: 16rpx 24rpx;
 	margin-right: 16rpx;
+	font-size: 26rpx;
 }
 .add-btn { margin: 0; font-size: 26rpx; }
 .student-item { margin: 16rpx 20rpx; }
@@ -156,12 +212,16 @@ export default {
 	line-height: 80rpx;
 	font-size: 36rpx;
 	margin-right: 20rpx;
+	flex-shrink: 0;
 }
-.s-name { font-size: 32rpx; font-weight: 600; }
-.s-no { font-size: 22rpx; color: #909399; margin-left: 10rpx; }
-.s-status { font-size: 22rpx; color: #f56c6c; margin-left: 10rpx; }
-.s-meta { font-size: 24rpx; margin-top: 6rpx; }
-.s-subjects { margin-top: 10rpx; }
+/* info-row 内嵌于卡片时的对齐修正 */
+.ir-body {
+	padding: 4rpx 0;
+	border-bottom: none;
+}
+.s-no { font-size: 22rpx; color: #909399; margin-left: 10rpx; font-weight: 400; }
+.s-subjects { margin-top: 16rpx; display: flex; align-items: center; flex-wrap: wrap; }
+.sub-label { font-size: 22rpx; color: #909399; margin-right: 10rpx; }
 .sub-tag {
 	display: inline-block;
 	font-size: 22rpx;
@@ -170,13 +230,15 @@ export default {
 	border-radius: 8rpx;
 	padding: 4rpx 14rpx;
 	margin-right: 8rpx;
+	margin-bottom: 6rpx;
 }
 .empty { text-align: center; padding: 80rpx 0; }
 .attend-btn {
-	margin: 16rpx 24rpx 24rpx;
+	margin: 20rpx 0 0;
 	font-size: 26rpx;
 	height: 60rpx;
 	line-height: 60rpx;
+	width: 100%;
 }
 .mask {
 	position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.45); z-index: 99;

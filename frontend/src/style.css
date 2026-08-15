@@ -274,3 +274,261 @@ a {
 ::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
+
+/* ================================================================
+   数据直观化工具类（逻辑无关，仅展示层）
+   ================================================================ */
+
+/* ---------- 迷你进度条 ---------- */
+.mini-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mini-progress .mp-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-light);
+  overflow: hidden;
+}
+.mini-progress .mp-bar {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--primary);
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.mini-progress .mp-bar.is-warn { background: var(--warning); }
+.mini-progress .mp-bar.is-danger { background: var(--danger); }
+.mini-progress .mp-bar.is-info { background: var(--info); }
+.mini-progress .mp-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 状态圆点 ---------- */
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.status-dot::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.status-dot.is-success::before { background: var(--success); }
+.status-dot.is-warning::before { background: var(--warning); }
+.status-dot.is-danger::before { background: var(--danger); }
+.status-dot.is-info::before { background: var(--info); }
+.status-dot.is-primary::before { background: var(--primary); }
+
+/* ---------- 金额 / 数字强调 ---------- */
+.amount {
+  color: var(--danger);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.amount.is-income { color: var(--success); }
+.num-strong {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* ---------- 涨跌指示 ---------- */
+.trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.trend.is-up { color: var(--success); }
+.trend.is-down { color: var(--danger); }
+
+/* ---------- 迷你统计块（详情页顶部指标） ---------- */
+.mini-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.mini-stat {
+  background: var(--card-bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+}
+.mini-stat .ms-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mini-stat .ms-value {
+  font-size: 22px;
+  font-weight: 700;
+  margin-top: 4px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.mini-stat .ms-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ---------- 键值行（详情页） ---------- */
+.kv-row {
+  display: flex;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border-light);
+  font-size: 14px;
+}
+.kv-row:last-child { border-bottom: none; }
+.kv-row .kv-label {
+  width: 96px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.kv-row .kv-value {
+  flex: 1;
+  color: var(--text);
+  word-break: break-all;
+}
+
+/* ---------- 提醒横幅 ---------- */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+.banner.is-warning {
+  background: var(--warning-light);
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+.banner.is-danger {
+  background: var(--danger-light);
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+.banner.is-info {
+  background: var(--info-light);
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+.banner.is-success {
+  background: var(--success-light);
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+.banner .banner-title { font-weight: 600; }
+.banner .banner-desc { font-size: 13px; opacity: 0.9; }
+
+/* ---------- 空状态 ---------- */
+.empty-hint {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 32px 0;
+}
+
+/* ---------- 紧凑列表行（移动端风格信息行） ---------- */
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.info-row:last-child { border-bottom: none; }
+.info-row .ir-left { min-width: 0; }
+.info-row .ir-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.info-row .ir-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.info-row .ir-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- 排行榜条（积分等） ---------- */
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.rank-row:last-child { border-bottom: none; }
+.rank-badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: var(--bg);
+  color: var(--text-secondary);
+}
+.rank-badge.is-top1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #fff; }
+.rank-badge.is-top2 { background: linear-gradient(135deg, #e5e7eb, #9ca3af); color: #fff; }
+.rank-badge.is-top3 { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; }
+.rank-name { flex: 1; font-size: 14px; color: var(--text); }
+.rank-score {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--warning);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 区块小标题（带色条） ---------- */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 18px 0 12px;
+}
+.section-title::before {
+  content: '';
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
+/* ---------- 响应式卡片网格 ---------- */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}

@@ -24,5 +24,9 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+    // 忽略编辑器/工具产生的临时文件与隐藏文件，避免文件锁导致 watcher 崩溃
+    watch: {
+      ignored: ['**/.??*', '**/*.tmp', '**/*.tmpdir/**', '**/node_modules/**'],
+    },
   },
 })

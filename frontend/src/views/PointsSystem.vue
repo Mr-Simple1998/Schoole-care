@@ -5,17 +5,19 @@
       <el-col :span="9">
         <el-card shadow="never">
           <template #header><span>积分排行榜</span></template>
-          <div v-if="leaderboard.length === 0" class="empty">暂无学生数据</div>
+          <div v-if="leaderboard.length === 0" class="empty-hint">暂无学生数据</div>
           <div v-else class="rank-list">
-            <div
-              v-for="(item, idx) in leaderboard"
-              :key="item.id"
-              class="rank-item"
-              :class="idx === 0 ? 'rank-gold' : idx === 1 ? 'rank-silver' : idx === 2 ? 'rank-bronze' : ''"
-            >
-              <span class="rank-no" :class="`rank-${idx + 1}`">{{ idx + 1 }}</span>
-              <span class="rank-name">{{ item.name }}</span>
-              <span class="rank-points">{{ item.points }} 分</span>
+            <div v-for="(item, idx) in leaderboard" :key="item.id" class="rank-row">
+              <span class="rank-badge" :class="idx === 0 ? 'is-top1' : idx === 1 ? 'is-top2' : idx === 2 ? 'is-top3' : ''">{{ idx + 1 }}</span>
+              <div class="rank-main">
+                <span class="rank-name">{{ item.name }}</span>
+                <div class="mini-progress">
+                  <div class="mp-track">
+                    <div class="mp-bar" :class="pointsBarClass(item.points)" :style="{ width: pointsPct(item.points) + '%' }"></div>
+                  </div>
+                  <span class="mp-text">{{ item.points }} 分</span>
+                </div>
+              </div>
             </div>
           </div>
         </el-card>
@@ -25,10 +27,33 @@
       <el-col :span="15">
         <el-card shadow="never" style="margin-bottom:16px">
           <template #header><span>积分加扣</span></template>
+          <!-- 学生积分概览（纯展示，基于 students 计算） -->
+          <div class="mini-stats points-stats">
+            <div class="mini-stat">
+              <div class="ms-label">学生总数</div>
+              <div class="ms-value">{{ studentStats.total }}</div>
+              <div class="ms-sub">当前可选学生</div>
+            </div>
+            <div class="mini-stat">
+              <div class="ms-label">平均积分</div>
+              <div class="ms-value">{{ studentStats.avg }}</div>
+              <div class="ms-sub">全体学生均值</div>
+            </div>
+            <div class="mini-stat">
+              <div class="ms-label">最高积分</div>
+              <div class="ms-value is-max">{{ studentStats.max }}</div>
+              <div class="ms-sub">榜首：{{ studentStats.top }}</div>
+            </div>
+          </div>
           <el-form inline>
             <el-form-item label="学生">
               <el-select v-model="changeForm.student_id" filterable placeholder="选择学生" style="width:170px">
-                <el-option v-for="s in students" :key="s.id" :label="`${s.name}(${s.points}分)`" :value="s.id" />
+                <el-option v-for="s in students" :key="s.id" :label="`${s.name}(${s.points}分)`" :value="s.id">
+                  <div class="student-opt">
+                    <span>{{ s.name }}</span>
+                    <span class="opt-points">{{ s.points }} 分</span>
+                  </div>
+                </el-option>
               </el-select>
             </el-form-item>
             <el-form-item label="积分变动">
@@ -62,12 +87,16 @@
             <el-table-column prop="student_name" label="学生" width="90" />
             <el-table-column prop="change" label="变动" width="80">
               <template #default="{ row }">
-                <span :style="{ color: row.change > 0 ? '#67c23a' : '#f56c6c', fontWeight: 600 }">
+                <span class="amount" :class="{ 'is-income': row.change > 0 }">
                   {{ row.change > 0 ? '+' : '' }}{{ row.change }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="category" label="类别" width="80" />
+            <el-table-column prop="category" label="类别" width="86">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain" :type="categoryType(row.category)">{{ row.category }}</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="reason" label="原因" show-overflow-tooltip />
             <el-table-column prop="created_at" label="时间" width="160">
               <template #default="{ row }">{{ (row.created_at || '').slice(0, 16) }}</template>
@@ -87,9 +116,16 @@
       </div>
       <el-table :data="prizes" size="small" stripe>
         <el-table-column prop="name" label="奖品" />
-        <el-table-column prop="cost_points" label="所需积分" width="100" />
+        <el-table-column prop="cost_points" label="所需积分" width="100">
+          <template #default="{ row }">
+            <span class="num-strong">{{ row.cost_points }} <span class="cost-unit">分</span></span>
+          </template>
+        </el-table-column>
         <el-table-column prop="stock" label="库存" width="80">
-          <template #default="{ row }">{{ row.stock === -1 ? '不限' : row.stock }}</template>
+          <template #default="{ row }">
+            <el-tag v-if="row.stock === -1" size="small" type="info" effect="plain">不限</el-tag>
+            <span v-else class="num-strong" :class="{ 'stock-low': row.stock <= 0 }">{{ row.stock }}</span>
+          </template>
         </el-table-column>
         <el-table-column prop="id" label="兑换" width="140">
           <template #default="{ row }">
@@ -108,7 +144,12 @@
         </el-form-item>
         <el-form-item label="学生" required>
           <el-select v-model="redeemStudentId" filterable placeholder="搜索或选择学生" style="width:100%">
-            <el-option v-for="s in students" :key="s.id" :label="`${s.name}（${s.points}分）`" :value="s.id" />
+            <el-option v-for="s in students" :key="s.id" :label="`${s.name}（${s.points}分）`" :value="s.id">
+              <div class="student-opt">
+                <span>{{ s.name }}</span>
+                <span class="opt-points">{{ s.points }} 分</span>
+              </div>
+            </el-option>
           </el-select>
         </el-form-item>
       </el-form>
@@ -121,7 +162,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import request from '@/utils/request'
@@ -137,6 +178,36 @@ const redeemStudentId = ref(null)
 
 const changeForm = reactive({ student_id: null, change: 5, category: '表现', reason: '' })
 const prizeForm = reactive({ name: '', cost_points: 10, stock: -1 })
+
+// ===== 纯展示统计/格式化（不参与任何业务逻辑，仅用于界面展示） =====
+const studentStats = computed(() => {
+  const list = students.value
+  if (!list.length) return { total: 0, avg: 0, max: 0, top: '-' }
+  const points = list.map((s) => Number(s.points) || 0)
+  const max = Math.max(...points)
+  const top = (list.find((s) => Number(s.points) === max) || {}).name || '-'
+  const avg = Math.round(points.reduce((a, b) => a + b, 0) / points.length)
+  return { total: list.length, avg, max, top }
+})
+
+const maxPoints = computed(() => leaderboard.value.reduce((m, i) => Math.max(m, Number(i.points) || 0), 0))
+
+function pointsPct(p) {
+  if (!maxPoints.value) return 0
+  return Math.max(2, Math.round(((Number(p) || 0) / maxPoints.value) * 100))
+}
+
+function pointsBarClass(p) {
+  const v = Number(p) || 0
+  const ratio = maxPoints.value ? v / maxPoints.value : 0
+  if (ratio < 0.4) return 'is-danger'
+  if (ratio < 0.7) return 'is-warn'
+  return ''
+}
+
+function categoryType(cat) {
+  return { 表现: 'success', 作业: 'primary', 成绩: 'warning', 纪律: 'danger' }[cat] || 'info'
+}
 
 async function loadAll() {
   leaderboard.value = await request.get('/points/leaderboard')
@@ -187,56 +258,46 @@ onMounted(loadAll)
 .rank-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
-.rank-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border-radius: 6px;
-  background: #f5f7fa;
-}
-.rank-gold {
-  background: linear-gradient(135deg, #fef3c7, #fde68a, #fef3c7);
-  border: 1px solid #f59e0b;
-}
-.rank-silver {
-  background: linear-gradient(135deg, #f1f5f9, #cbd5e1, #f1f5f9);
-  border: 1px solid #94a3b8;
-}
-.rank-bronze {
-  background: linear-gradient(135deg, #fef2f2, #fecaca, #fef2f2);
-  border: 1px solid #d97706;
-}
-.rank-no {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
-  background: #c0c4cc;
-  color: #fff;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-}
-.rank-1 { background: #f59e0b; }
-.rank-2 { background: #94a3b8; }
-.rank-3 { background: #d97706; }
-.rank-name {
+.rank-main {
   flex: 1;
-  font-weight: 500;
+  min-width: 0;
 }
-.rank-points {
-  color: #e6a23c;
+.rank-main .rank-name {
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* 学生积分概览 */
+.points-stats {
+  margin-bottom: 16px;
+}
+.points-stats .ms-value.is-max {
+  color: var(--warning);
+}
+
+/* 学生下拉选项：姓名 + 积分高亮 */
+.student-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.student-opt .opt-points {
+  color: var(--warning);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
 }
-.empty {
-  text-align: center;
-  color: #909399;
-  padding: 30px 0;
+
+/* 奖品表格数字辅助 */
+.cost-unit {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.stock-low {
+  color: var(--danger);
 }
 
 /* 积分加扣表单间距优化 */

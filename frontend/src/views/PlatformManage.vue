@@ -58,10 +58,10 @@
           </template>
         </el-table-column>
         <el-table-column label="交费金额(元)" width="110">
-          <template #default="{ row }">{{ row.fee_amount }}</template>
+          <template #default="{ row }"><span class="warn-text num-strong">{{ row.fee_amount ?? '-' }}</span></template>
         </el-table-column>
         <el-table-column label="累计交费(元)" width="110">
-          <template #default="{ row }">{{ row.total_paid }}</template>
+          <template #default="{ row }"><span class="income-text num-strong">{{ row.total_paid ?? '-' }}</span></template>
         </el-table-column>
         <el-table-column label="到期状态" width="150">
           <template #default="{ row }">
@@ -562,7 +562,7 @@ onBeforeUnmount(() => {
 .stat-num {
   font-size: 26px;
   font-weight: 700;
-  color: #409eff;
+  color: #10b981;
   animation: countIn 0.6s ease-out;
 }
 @keyframes countIn {
@@ -605,6 +605,9 @@ onBeforeUnmount(() => {
 }
 .danger-text {
   color: #f56c6c;
+}
+.income-text {
+  color: #10b981;
 }
 
 /* ===== 图表区 ===== */

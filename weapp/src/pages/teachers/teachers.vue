@@ -2,12 +2,64 @@
 	<view class="page">
 		<button class="btn-primary add-btn" @click="showAdd=true">新增教师</button>
 
+		<!-- 概览小卡（纯展示） -->
+		<view class="stat-grid" v-if="teachers && teachers.length">
+			<view class="stat-card is-green">
+				<view class="stat-top">
+					<text class="stat-label">教师总数</text>
+					<text class="stat-emoji">👩‍🏫</text>
+				</view>
+				<text class="stat-num">{{ teacherStats.total }}</text>
+				<text class="stat-sub">本机构全部教师账号</text>
+				<view class="stat-accent"></view>
+			</view>
+			<view class="stat-card is-green">
+				<view class="stat-top">
+					<text class="stat-label">正常启用</text>
+					<text class="stat-emoji">✅</text>
+				</view>
+				<text class="stat-num">{{ teacherStats.active }}</text>
+				<text class="stat-sub">可正常登录使用</text>
+				<view class="stat-accent"></view>
+			</view>
+			<view class="stat-card is-red">
+				<view class="stat-top">
+					<text class="stat-label">已停用</text>
+					<text class="stat-emoji">⛔</text>
+				</view>
+				<text class="stat-num">{{ teacherStats.inactive }}</text>
+				<text class="stat-sub">暂不可登录</text>
+				<view class="stat-accent"></view>
+			</view>
+			<view class="stat-card is-blue">
+				<view class="stat-top">
+					<text class="stat-label">已分配学科</text>
+					<text class="stat-emoji">📚</text>
+				</view>
+				<text class="stat-num">{{ teacherStats.withSubject }}</text>
+				<text class="stat-sub">有归属学科</text>
+				<view class="stat-accent"></view>
+			</view>
+		</view>
+
 		<view class="card">
-			<view class="card-title">教师列表</view>
-			<view v-for="t in teachers" :key="t.id" class="user-item">
-				<view class="flex">
-					<text class="flex-1">{{ t.name }} <text class="text-muted" style="font-size:24rpx">@{{ t.username }}</text></text>
-					<text :class="t.is_active ? 'text-primary' : 'text-danger'">{{ t.is_active ? '启用' : '停用' }}</text>
+			<view class="card-title"><view class="bar"></view>教师列表</view>
+			<view v-for="t in teachers" :key="t.id" class="info-row">
+				<view class="ir-left">
+					<view class="ir-title">
+						<text>{{ t.name }}</text>
+						<text class="tag" :class="t.role === 'principal' ? 'tag-info' : 'tag-primary'">{{ t.role === 'principal' ? '校长' : '教师' }}</text>
+					</view>
+					<view class="ir-sub">
+						<text>@{{ t.username }}</text>
+						<text v-if="subjectText(t)" class="sub-divider">·</text>
+						<text v-if="subjectText(t)" class="sub-subjects">{{ subjectText(t) }}</text>
+					</view>
+				</view>
+				<view class="ir-right">
+					<text class="tag" :class="t.is_active ? 'tag-success' : 'tag-danger'">
+						<text class="dot" :class="t.is_active ? 'dot-green' : 'dot-red'"></text>{{ t.is_active ? '启用' : '停用' }}
+					</text>
 					<text class="del" @click="doDelete(t)">删除</text>
 				</view>
 			</view>
@@ -40,8 +92,28 @@ export default {
 			form: { name: '', username: '', password: '' }
 		};
 	},
+	computed: {
+		// 纯展示：概览统计
+		teacherStats() {
+			const list = this.teachers || [];
+			const total = list.length;
+			const active = list.filter(t => t.is_active).length;
+			const withSubject = list.filter(t => (t.subjects || []).length > 0).length;
+			return {
+				total: total,
+				active: active,
+				inactive: total - active,
+				withSubject: withSubject
+			};
+		}
+	},
 	onLoad() { this.loadTeachers(); },
 	methods: {
+		// 纯展示：所属学科文案
+		subjectText(t) {
+			const subs = (t.subjects || []).map(s => s.name).filter(Boolean);
+			return subs.length ? subs.join('、') : '';
+		},
 		async loadTeachers() {
 			try { this.teachers = await get('/auth/teachers'); } catch (e) {}
 		},
@@ -76,10 +148,13 @@ export default {
 </script>
 
 <style scoped>
+.page { padding-bottom: 40rpx; }
 .add-btn { margin: 20rpx; }
-.user-item { padding: 20rpx 0; border-bottom: 1rpx solid #f5f5f5; }
-.user-item:last-child { border-bottom: none; }
-.del { color: #f56c6c; margin-left: 20rpx; font-size: 26rpx; }
+.ir-title { display: flex; align-items: center; gap: 12rpx; }
+.ir-title .tag { padding: 2rpx 12rpx; font-size: 20rpx; }
+.sub-divider { color: #c0c4cc; }
+.sub-subjects { color: #10b981; }
+.del { color: #f56c6c; margin-left: 8rpx; font-size: 26rpx; }
 .empty { text-align: center; padding: 30rpx 0; }
 .mask { position: fixed; left:0; top:0; right:0; bottom:0; background: rgba(0,0,0,0.45); z-index:99; display:flex; align-items:center; justify-content:center; }
 .dialog { width: 80%; background:#fff; border-radius:16rpx; padding:36rpx 32rpx; }

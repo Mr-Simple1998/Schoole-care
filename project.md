@@ -1,7 +1,21 @@
-# 机构后台学习管理系统 — 项目说明
+# 机构后台学习管理系统 — 项目说明（v2 · 2026-08-15 更新）
 
 > 后端托管的机构后台管理系统，含平台开户、校长/教师双端、学生档案、收费核销、积分、考勤等功能。
-> 本文件用于快速了解项目架构与开发约定，避免下次更新时重新扫描全项目。
+> 本文档用于快速了解项目架构、开发约定、踩坑记录，避免下次更新时重新扫描全项目或重踩环境问题。
+
+---
+
+## 0. 项目现状（本次会话后）
+
+| 项 | 值 |
+|----|----|
+| 仓库 | `git@github.com:Mr-Simple1998/tuoguan-system.git`（私有，SSH 认证） |
+| 本地位置 | `C:\Users\DZY\Desktop\后台管理系统`（克隆于 2026-08-15） |
+| 分支 | `main`（跟踪 origin/main），git 工作区干净 |
+| 三端 UI | **已全部优化**（PC 10 页 + 小程序 10 页），业务逻辑/后端 0 改动 |
+| 后端 | FastAPI，端口 8000（运行中），SQLite `backend/tortoise.db` 已初始化 |
+| 前端 | Vue3 + Vite，端口 5173（运行中） |
+| 小程序 | 已 `build:mp-weixin` 构建，产物 `weapp/dist/build/mp-weixin`，已导入微信开发者工具 |
 
 ---
 
@@ -9,23 +23,23 @@
 
 | 端 | 技术 |
 |----|------|
-| 后端 | Python 3.12 + FastAPI 0.141 + SQLAlchemy 2.0 + Pydantic 2 + SQLite |
+| 后端 | Python 3.14 + FastAPI 0.141 + SQLAlchemy 2.0 + Pydantic 2 + SQLite |
 | 前端 | Vue 3.5 + Vite 8 + Element Plus 2.14 + Pinia + Vue Router 4 + ECharts |
+| 小程序 | uni-app（Vue3 + Vite 5 + Pinia），微信小程序 mp-weixin |
 | 认证 | JWT（python-jose）+ bcrypt 密码哈希 |
-| 数据库 | SQL 文件：`backend/tortoise.db`（默认，见 `config.py`） |
 
-依赖清单：后端 `backend/requirements.txt`，前端 `frontend/package.json`。
+依赖清单：后端 `backend/requirements.txt`，前端 `frontend/package.json`，小程序 `weapp/package.json`。
 
 ---
 
 ## 2. 目录结构
 
 ```
-d:\AI项目\机构后台管理系统\
+C:\Users\DZY\Desktop\后台管理系统\
 ├─ backend\
 │  ├─ app\
 │  │  ├─ main.py            # FastAPI 入口，注册全部路由、CORS、静态目录
-│  │  ├─ config.py          # 配置（app_name / database_url / debug）
+│  │  ├─ config.py          # 配置（app_name / database_url / debug / wx_*）
 │  │  ├─ database.py        # 引擎 / SessionLocal / get_db
 │  │  ├─ security.py        # JWT、密码哈希、get_current_user / get_current_principal
 │  │  ├─ seed_admin.py      # 初始化默认管理员 + 默认学科
@@ -34,30 +48,25 @@ d:\AI项目\机构后台管理系统\
 │  │  ├─ models_learning.py # Score / Attendance / Homework / ClassPerformance
 │  │  ├─ models_points.py   # PointRecord（积分）
 │  │  ├─ models_subject.py  # Subject / StudentSubject（学科+课时）
-│  │  └─ routers\
-│  │     ├─ auth.py         # /api/auth   登录、当前用户
-│  │     ├─ students.py     # /api/students  学生 CRUD + 学科课时
-│  │     ├─ income.py       # /api/income   收费管理
-│  │     ├─ learning.py     # /api/learning 成绩/考勤/作业/课堂表现
-│  │     ├─ points.py       # /api/points   积分
-│  │     ├─ dashboard.py    # /api/dashboard 工作台统计+到期提醒
-│  │     ├─ subjects.py     # /api/subjects  学科管理
-│  │     ├─ profile.py      # /api/profile   个人资料
-│  │     └─ platform.py     # /api/platform  平台开户管理
-│  └─ tortoise.db           # SQLite 数据库
-└─ frontend\
-   └─ src\
-      ├─ main.js / App.vue / style.css
-      ├─ router\index.js    # 路由 + 登录/角色守卫
-      ├─ stores\user.js     # Pinia 用户状态（token/user/角色判断）
-      ├─ utils\request.js   # axios 封装（token 注入 + 401/403 处理）
-      ├─ layouts\MainLayout.vue
-      ├─ components\ProfileDialog.vue
-      └─ views\
-         ├─ Login.vue / Dashboard.vue / PlatformManage.vue
-         ├─ StudentList.vue / StudentDetail.vue
-         ├─ IncomeManage.vue / TeacherManage.vue
-         ├─ SubjectManage.vue / PointsSystem.vue
+│  │  └─ routers\           # auth/students/income/learning/points/dashboard/subjects/profile/platform
+│  └─ tortoise.db           # SQLite 数据库（已初始化）
+├─ frontend\                # PC 管理端（Vue3 + Element Plus + ECharts）
+│  └─ src\
+│     ├─ views\             # 10 个页面（均已 UI 优化）
+│     ├─ layouts\MainLayout.vue
+│     ├─ stores\user.js / router\index.js / utils\request.js
+│     └─ style.css          # 全局样式 + 数据直观化工具类（见 §12）
+├─ weapp\                   # 微信小程序（uni-app）
+│  └─ src\
+│     ├─ pages\             # 10 个页面（均已 UI 优化）
+│     ├─ App.vue            # 全局样式（统计卡/标签/进度条/横幅等工具类）
+│     ├─ uni.scss           # 主题变量（teal #10b981）
+│     ├─ manifest.json / pages.json
+│     └─ utils\request.js   # BASE_URL 默认 http://127.0.0.1:8000
+├─ .ssh\                    # 本地 SSH 密钥（已被 .git/info/exclude 排除，不入库）
+├─ .tmp\UI_GUIDE.md         # 三端 UI 设计规范（也已被排除，不入库）
+├─ start.bat                # 一键启动脚本
+└─ project.md / README.md / .gitignore
 ```
 
 ---
@@ -66,29 +75,35 @@ d:\AI项目\机构后台管理系统\
 
 ### 后端（端口 8000）
 ```powershell
-cd d:\AI项目\机构后台管理系统\backend
+cd backend
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-首次建表由 `main.py` 的 `Base.metadata.create_all` 自动完成；初始化管理员/学科：
-```powershell
-.\.venv\Scripts\python.exe -m app.seed_admin
-```
+- 首次建表由 `main.py` 的 `Base.metadata.create_all` 自动完成；初始化管理员/学科：
+  ```powershell
+  .\.venv\Scripts\python.exe -m app.seed_admin
+  ```
 
 ### 前端（端口 5173）
 ```powershell
-cd d:\AI项目\机构后台管理系统\frontend
-$env:Path = 'C:\Program Files\nodejs;' + $env:Path
-& 'C:\Program Files\nodejs\npm.cmd' run dev
+cd frontend
+npm run dev    # 或 npm.cmd run dev（若 npm 不在 PATH）
 ```
-> 注意：`npm` 可能不在 PATH，需用完整路径 `C:\Program Files\nodejs\npm.cmd` 启动。
 
-### 微信小程序（uni-app，端口无关，导出到微信开发者工具）
+### 微信小程序（uni-app）
 ```powershell
-cd d:\AI项目\机构后台管理系统\weapp
-$env:Path = 'C:\Program Files\nodejs;' + $env:Path
-& 'C:\Program Files\nodejs\npm.cmd' run build:mp-weixin   # 或 dev:mp-weixin
+cd weapp
+npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 ```
-构建产物在 `weapp/dist/build/mp-weixin`（dev 在 `dist/dev/mp-weixin`）。用微信开发者工具「导入项目」打开该目录即可运行；本地联调需勾选「不校验合法域名」。后端地址在小程序 `weapp/src/utils/request.js` 的 `BASE_URL`（默认 `http://127.0.0.1:8000`）。
+然后微信开发者工具「导入项目」打开该目录（或见 §10 CLI 方式）。本地联调勾选「不校验合法域名」。
+
+### ⚠️ 沙箱/特殊环境下的启动注意事项（agent 会话用）
+- 系统 schannel TLS 在此环境失效 → **PowerShell/curl/winget 无法 HTTPS**；Node.js 与 Python（OpenSSL）正常。
+- `pip install` 会被沙箱拦截写临时目录 → 需 `danger-full-access` 权限，或用系统 pip 直装 venv：
+  ```powershell
+  python -m pip --python .venv\Scripts\python.exe install -r requirements.txt
+  ```
+- Vite / uni 构建需要 spawn 子进程 → 同样需完整权限启动。
+- git 的 SSH 必须用系统原生 ssh（见 §11-④）。
 
 ---
 
@@ -97,8 +112,8 @@ $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 | 角色 | 说明 | 默认账号 |
 |------|------|----------|
 | `platform` | 平台超级管理员（机构开户） | `admin / admin123` |
-| `principal` | 校长/管理员（本机构全部数据） | 测试：`principal1` |
-| `teacher`  | 教师（仅自己负责的学生） | 测试：`teacher` |
+| `principal` | 校长/管理员（本机构全部数据） | 由平台「机构开户」创建 |
+| `teacher`  | 教师（仅自己负责的学生） | 由校长在「教师管理」创建 |
 
 角色权限差异（重要）：
 - 教师端任何查询/操作只能访问 `teacher_id == 当前用户.id` 的学生，否则返回 403。
@@ -113,75 +128,133 @@ $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 2. **教师数据隔离**：教师只能查看/操作自己负责的学生（JOIN Student 过滤 `teacher_id`）。
 3. **课时收费**：一次性收完，按次核销，次数可跨学期使用直至用完。
 4. **学生打卡核销**：打卡成功后，自动查找该生最早有剩余次数的收费记录，核销 1 次（`used_sessions + 1`）。
-5. **学科课时（新增）**：学生-学科关联 `StudentSubject` 支持两种计费方式——
+5. **学科课时**：学生-学科关联 `StudentSubject` 支持两种计费方式——
    - 按课时：`total_sessions` 有值，打卡时 `used_sessions + 1`，剩余 = total - used。
-   - 按到期时间：`total_sessions` 为 NULL，配置 `duration_value`（数值）+ `duration_unit`（天/月/年），**到期日 = 该生第一次在该学科打卡的日期 + 时长**，首次打卡时自动计算并写入 `expire_date`。
-6. **到期提醒**：Dashboard 提前 5 天（`FEE_REMIND_DAYS=5`）提醒收费到期 / 学科到期；机构账号提前 7 天（`REMIND_DAYS=7`）。
+   - 按到期时间：`total_sessions` 为 NULL，配置 `duration_value` + `duration_unit`（天/月/年），到期日 = 该生第一次在该学科打卡的日期 + 时长。
+6. **到期提醒**：Dashboard 提前 5 天（`FEE_REMIND_DAYS=5`）提醒收费到期/学科到期；机构账号提前 7 天（`REMIND_DAYS=7`）。
 7. **学生删除**：软删除（`deleted=True`），保留收费历史；同时清除积分数据。
-8. **收入权限**：教师角色不可见机构月收入——`dashboard.py` 对 `UserRole.TEACHER` 将 `month_income` 置 0；小程序工作台「本月收入」卡片 `v-if="!store.isTeacher"` 隐藏。校长/平台正常可见。
+8. **收入权限**：教师角色不可见机构月收入——`dashboard.py` 对 `UserRole.TEACHER` 将 `month_income` 置 0；小程序工作台「本月收入」卡片 `v-if="!store.isTeacher"` 隐藏。
 
 ---
 
 ## 6. 数据库模型要点
 
-- `StudentSubject`（`student_subjects` 表）字段：`student_id`、`subject_id`、`total_sessions`、`used_sessions`、`duration_value`、`duration_unit`、`expire_date`。
-- `Student`：含 `school`（学校）、`enrollment_date`（入学日期）、`grade`、`status`、`points`、`deleted`。
-- `Attendance`：含 `subject_id`（打卡学科）、`date`、`status`、`org_id`。
-- 学生列表页已移除「托管班」列，改为显示「入学时间」。
+- `StudentSubject`（`student_subjects` 表）：`student_id`、`subject_id`、`total_sessions`、`used_sessions`、`duration_value`、`duration_unit`、`expire_date`。
+- `Student`：`school`、`enrollment_date`、`grade`、`status`、`points`、`deleted`。
+- `Attendance`：`subject_id`（打卡学科）、`date`、`status`、`org_id`。
+- 数据库加列需手动 `ALTER TABLE`（SQLite 无自动迁移）。
 
 ---
 
-## 7. 前端页面与路由
+## 7. 前端页面与路由（均已 UI 优化，逻辑不变）
 
-| 路由 | 页面 | 说明 |
-|------|------|------|
-| `/login` | Login | 登录 |
-| `/dashboard` | Dashboard | 工作台：统计卡片、收入趋势、学科分布、缴费/到期提醒 |
-| `/students` | StudentList | 学生管理（新增含学校+学科课时/时长配置） |
-| `/student/:id` | StudentDetail | 学习档案：成绩、考勤（含课时核销概览+到期时间）、作业、课堂表现 |
-| `/income` | IncomeManage | 收费管理（校长） |
-| `/teachers` | TeacherManage | 教师管理（校长） |
-| `/subjects` | SubjectManage | 学科管理（校长） |
-| `/points` | PointsSystem | 积分奖励 |
-| `/platform` | PlatformManage | 机构开户管理（平台） |
+| 路由 | 页面 |
+|------|------|
+| `/login` | Login 登录 |
+| `/dashboard` | 工作台：统计卡、收入趋势、学科分布、到期提醒 |
+| `/students` | 学生列表（概览卡 + 课时剩余进度条 + 状态圆点） |
+| `/student/:id` | 学生档案（指标条 + 成绩着色 + 课时进度） |
+| `/income` | 收费管理（收支概览 + 到期标签 + 核销进度） |
+| `/teachers` | 教师管理（统计卡 + 角色标签 + 状态圆点） |
+| `/subjects` | 学科管理（统计卡 + 分类标签） |
+| `/points` | 积分奖励（金银铜排行榜条 + 涨跌配色） |
+| `/platform` | 机构开户管理（平台） |
+| `/deleted-students` | 已删除学生（概览 + 语义化列表） |
 
 ---
 
 ## 8. 近期改动记录
 
+- **2026-08-15 · 三端 UI 全面优化**：PC 10 页 + 小程序 10 页；统计卡片+数字高亮、状态标签+颜色语义化、进度条（课时/分期/积分占比）、提醒横幅、排行榜条、空状态优化；teal 主题统一；**仅展示层，逻辑/后端 0 改动**（详见 §12）。
 - 学生新增表单支持「学校信息」「课时数」「时长（天/月/年）」。
-- 学生列表「托管班」列 → 替换为「入学时间」列；年级列加宽且不换行。
-- 学生档案新增「课时核销情况」概览（进度条），不按课时的学科显示到期时间及状态标签。
-- 非核销课时学科到期日：首次打卡当日 + 时长自动计算（天/月/年）。
-- Dashboard 新增学科到期提醒（提前 5 天）。
-- 全局 UI 采用 teal 主色 `#10b981`、圆角卡片、侧边栏、翻页/数字动画。
-- 微信小程序成功导入微信开发者工具并完成真实登录流程联调（教师账号 `sun123`）。
-- 已验证小程序与 PC 端数据互通（同一后端+数据库，读写双向一致）。
-- 已验证考勤核销一致性（打卡 → 数据库 `used_sessions+1` → PC 端档案接口一致）。
-- 教师角色工作台不再显示机构月收入（后端置 0 + 前端 `v-if` 双保险）。
+- 学生档案「课时核销情况」进度条；非核销课时学科显示到期时间与状态标签。
+- 学生列表「托管班」列 → 「入学时间」列。
+- 微信小程序完成真实登录联调、与 PC 数据互通、考勤核销一致性验证。
+- 教师角色工作台不显示机构月收入（后端置 0 + 前端 v-if 双保险）。
 
 ---
 
 ## 9. 开发注意事项
 
-- 改字段需同步：模型（`models_subject.py` 等）→ 路由 Pydantic（`students.py`）→ 前端表单（`StudentList.vue`）→ 前端展示（`StudentDetail.vue`）。
-- 数据库加列需手动执行 `ALTER TABLE`（SQLite 无自动迁移），参考脚本在 `c:\Users\段兆洋\.trae-cn\work\6a7c14432bf02d93d676a576\migrate_*.py`。
+- 改字段需同步：模型 → 路由 Pydantic → 前端表单 → 前端展示。
 - 前端请求统一走 `@/utils/request`（自动带 token、统一错误提示）。
 - 角色判断用 `userStore.isPrincipal / isTeacher / isPlatform`。
+- **UI 改动遵循 `C:\Users\DZY\Desktop\后台管理系统\.tmp\UI_GUIDE.md` 设计规范**（含全局工具类清单），PC 端工具类在 `frontend/src/style.css`，小程序端在 `weapp/src/App.vue` 全局样式 + `uni.scss` 主题变量。
+- 新增展示型统计/格式化：只加纯展示 computed/helper，不动请求逻辑（本次优化全部遵循此原则）。
+
+---
 
 ## 10. 微信小程序（weapp/）
 
 | 项 | 说明 |
 |----|------|
-| 框架 | uni-app（Vue3 + Vite + Pinia），目录 `weapp/` |
-| 登录 | 微信授权 + 账号密码绑定：`User.wx_openid` 字段；接口 `POST /api/auth/wx-bind`（绑定）、`POST /api/auth/wx-login`（静默） |
-| 数据互通 | 小程序与 PC 共用同一后端 API + 数据库，JWT 鉴权一致，天然互通 |
-| 真实微信 | 凭证在 `backend/.env` 的 `WX_APPID`/`WX_SECRET`，`config.py` 读取；`auth.py::_wx_openid()` 调 `sns/jscode2session` 换真实 openid |
-| 兜底 | `_wx_openid()` 在未配置凭证或微信返回错误码(40013/40125/40029)时，回退把 code 当 openid（本地模拟）；前端 `uni.login` 失败时用本地 `wx_dev_openid` 标识 |
-| 页面 | 登录、工作台、学生列表/新增/档案、考勤打卡、成绩/作业/课堂、收费、积分、教师、学科、我的 |
+| 框架 | uni-app（Vue3 + Vite + Pinia） |
+| 登录 | 微信授权 + 账号密码绑定：`User.wx_openid`；接口 `POST /api/auth/wx-bind`（绑定）、`POST /api/auth/wx-login`（静默） |
+| 凭证 | `backend/.env` 的 `WX_APPID`/`WX_SECRET`；未配置时退化为本地模拟（code 当 openid） |
 | BASE_URL | `weapp/src/utils/request.js`，默认 `http://127.0.0.1:8000` |
-| AppID | 测试号 `wxb50df87e7a46f2c6`（在 `weapp/src/manifest.json` 的 `mp-weixin.appid`） |
-| 编译 | `npm run build:mp-weixin`，产物在 `weapp/dist/build/mp-weixin`，微信开发者工具导入运行 |
-| 开发者工具 CLI | `D:\微信小程序开发工具\微信web开发者工具\cli.bat`；`open --project <路径>` 导入，`islogin` 查登录；需先开启开发者工具「设置→安全设置→服务端口」 |
+| AppID | 测试号 `wxb50df87e7a46f2c6`（`weapp/src/manifest.json`） |
+| 编译 | `npm run build:mp-weixin`，产物 `weapp/dist/build/mp-weixin` |
+| **开发者工具（实际安装位置，注意是 E 盘）** | `E:\微信小程序开发工具\微信web开发者工具\cli.bat`（旧文档写的 D:\ 有误） |
+| CLI 导入命令（已验证可行） | `& "E:\微信小程序开发工具\微信web开发者工具\cli.bat" open --project "C:\Users\DZY\Desktop\后台管理系统\weapp\dist\build\mp-weixin"` |
 
-> 说明：`admin` 为平台账号（无机构 ID），登录后看不到机构学生数据；小程序应使用校长 `principal*` / 教师账号登录绑定，才能看到各自机构/负责的学生，与 PC 端一致。
+> 说明：`admin` 为平台账号（无机构 ID），看不到机构学生数据；小程序应使用校长/教师账号登录绑定。
+
+---
+
+## 11. 环境问题与解决方案汇总（重点 · 下次遇到直接对照）
+
+### ① Git 安装与 winget
+- 现象：系统无 git；`winget install Git.Git` 无输出退出码 1（winget 自身 HTTPS 走 schannel 失败）。
+- 方案：用 Node.js（OpenSSL）从 GitHub Releases 下载 MinGit 便携版解压使用；后用户手动安装 Git 到 `E:\Git安装\Git`。
+- 注意：`E:\Git安装` 目录在会话中曾凭空消失（PATH 仍在但目录没了），重新安装后恢复——疑似环境隔离/安装未完成，若再遇到 `git` 找不到，检查该目录是否存在。
+
+### ② 网络环境
+- 现象：PowerShell/.NET/curl 的 HTTPS 全部失败（schannel `SEC_E_NO_CREDENTIALS`）；`http://` 正常。
+- 结论：**系统级 TLS（schannel）在此环境不可用，Node.js / Python（OpenSSL）的 HTTPS 正常**。
+- 网络白名单：`api.github.com`、`codeload.github.com` 稳定可达；`github.com` 间歇性超时（20.205.243.166）；`objects.githubusercontent.com` 仅 `185.199.110.133` 一个 IP 可达。
+- 下载方案：Node 自定义 `lookup`（DNS 劫持到可达 IP）+ 重试（github.com 时好时坏）。
+- PyPI / npm registry 均可达。
+
+### ③ 沙箱文件限制
+- 临时目录每次调用轮换（`%TEMP%\dsh-XXXX`），**大文件不跨调用保留** → 下载+解压要在单次调用内完成，或写入工作区（持久）。
+- `pip install` 写临时目录被拒 → 需 `danger-full-access` 权限（会弹用户授权），或用系统 pip `--python` 选项直装 venv。
+- Vite dev / uni build 启动时 `spawn EPERM`（Node 子进程管道限制）→ 需 `danger-full-access` 启动。
+- venv 创建成功但 `ensurepip` 失败（pip 写 temp 被拒）→ 用 `python -m pip --python .venv\Scripts\python.exe install -r requirements.txt`（pip 26+ 支持 `--python`，须放在子命令前）。
+- 编辑文件时 Vite 文件监听可能因编辑工具临时文件锁 EBUSY 崩溃 → `frontend/vite.config.js` 已加 `server.watch.ignored`（忽略 `.??*`、`*.tmp` 等），勿删。
+
+### ④ Git + SSH（私有仓库）
+- Git for Windows 自带 Cygwin `ssh.exe`/`sh.exe` 无法创建信号管道（Win32 error 5）→ 直接 clone/fetch 会失败。
+- 系统原生 ssh（`C:\Windows\System32\OpenSSH\ssh.exe`）正常，但无参数时按 `%USERPROFILE%\.ssh` 找密钥（不会用 `HOME`），且会卡在交互提示。
+- 解决方案（已验证）：`C:\Users\DZY\Desktop\后台管理系统\.ssh\git-ssh.cmd` 包装脚本：
+  ```
+  @echo off
+  "C:\Windows\System32\OpenSSH\ssh.exe" -i "%~dp0id_ed25519" -o StrictHostKeyChecking=no -o UserKnownHostsFile="%~dp0known_hosts" -o BatchMode=yes -o ConnectTimeout=20 %*
+  ```
+  使用：`$env:GIT_SSH = "C:\Users\DZY\Desktop\后台管理系统\.ssh\git-ssh.cmd"`（git 直接 exec .cmd，不走 sh）。
+  仓库本地已配 `core.sshCommand`（正常终端可用）；`%USERPROFILE%\.ssh` 目录不存在（沙箱拒写用户目录），密钥放工作区 `.ssh\`（已 .git/info/exclude 排除）。
+- 私钥无密码（ed25519）；公钥已添加到 GitHub 账号 Mr-Simple1998。
+
+### ⑤ 其他
+- 系统 Python 仅 3.14；requirements 各包均有 cp314 wheel，可正常安装（bcrypt 5.0.0 / pydantic-core 等 OK）。
+- npm 11 的 allow-scripts：core-js/esbuild/vue-demi 的 postinstall 未执行（仅警告），esbuild 二进制走 optionalDependencies，**不影响构建**。
+- `.ssh/`、`.git-tools/`、`.tmp/`、`.pip-cache/`、`.npm-cache/`、`.pipwork-*/` 已加入 `.git/info/exclude`，不入库、不影响 git status。
+
+---
+
+## 12. 三端 UI 优化说明（2026-08-15）
+
+### 设计规范
+- 主文档：`C:\Users\DZY\Desktop\后台管理系统\.tmp\UI_GUIDE.md`（工具类清单 + 展示模式 + 铁律：不改逻辑）。
+- PC 端全局工具类：`frontend/src/style.css` 末尾「数据直观化工具类」区块：
+  `.mini-stats/.mini-stat`、`.mini-progress(.mp-track/.mp-bar/.mp-text)`、`.status-dot`、`.amount`、`.trend`、`.kv-row`、`.banner.is-*`、`.info-row`、`.rank-row/.rank-badge(.is-top1/2/3)`、`.section-title`、`.card-grid`、`.empty-hint`、`.num-strong` 等。
+- 小程序端全局工具类：`weapp/src/App.vue` 全局 `<style>`：
+  `.stat-card(.is-blue/green/orange/red/purple)`、`.stat-grid`、`.tag(.tag-success/danger/warn/info/primary/grey/plain)`、`.dot(.dot-*)`、`.progress(.is-warn/danger/info)`、`.banner.is-*`、`.kv-row`、`.info-row`、`.rank-row/.rank-badge(.top1/2/3)`、`.amount(.income)`、`.empty`、`.section-title`、`.divider` 等；主题变量在 `uni.scss`（teal）。
+
+### 各页优化要点（逻辑零改动）
+- **PC**：学生列表（概览卡+课时剩余进度条+状态圆点）、学生档案（指标条+成绩按得分率着色）、收费管理（收支概览+到期标签+核销/分期进度）、机构开户（teal 统一+金额配色）、登录/学科/教师/积分/已删除学生（统计卡+排行榜条+状态标签+空状态）。
+- **小程序**：工作台（彩色统计卡+到期横幅+标签提醒）、学生三页（概览卡+课时进度+到期横幅）、收费（欠费横幅+次数进度）、积分（排行榜条+涨绿跌红）、教师/学科/登录/我的（信息行+角色标签+卡片网格+视觉升级）。
+
+### 验证方式（本次用过，可复用）
+- PC 页面编译：Vite 按需编译 `http://localhost:5173/src/views/<Page>.vue` 返回 200。
+- 小程序页面校验：用 `frontend/node_modules/@vue/compiler-sfc` 对 weapp 页面做 parse + compileScript + compileTemplate。
+- 逻辑零改动核对：`git diff backend/` 为空；`git status --short` 只应有 UI 文件。

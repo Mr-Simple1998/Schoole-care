@@ -1,6 +1,27 @@
 <template>
   <div class="page-container">
     <el-card shadow="never">
+      <!-- 数据概览 -->
+      <div class="mini-stats mb-16">
+        <div class="mini-stat">
+          <div class="ms-label">👥 学生总数</div>
+          <div class="ms-value">{{ summary.total }}</div>
+        </div>
+        <div class="mini-stat">
+          <div class="ms-label">✅ 在读学生</div>
+          <div class="ms-value" style="color: var(--success)">{{ summary.active }}</div>
+          <div class="ms-sub">在读率 {{ summary.activeRate }}%</div>
+        </div>
+        <div class="mini-stat">
+          <div class="ms-label">📚 启用学科</div>
+          <div class="ms-value" style="color: var(--info)">{{ summary.subjCount }}</div>
+        </div>
+        <div class="mini-stat">
+          <div class="ms-label">📅 本月入学</div>
+          <div class="ms-value" style="color: var(--warning)">{{ summary.thisMonth }}</div>
+        </div>
+      </div>
+
       <div class="toolbar">
         <div class="toolbar-left">
           <el-input v-model="keyword" placeholder="搜索姓名/学号" clearable style="width: 220px" @input="handleSearch">
@@ -14,6 +35,7 @@
               <el-option v-for="s in subjectGroups['非学科']" :key="s.id" :label="s.name" :value="s.id" />
             </el-option-group>
           </el-select>
+          <span class="result-count">共 <b>{{ filteredStudents.length }}</b> 名学生</span>
         </div>
         <el-button type="primary" :icon="Plus" class="btn-add" @click="openDialog()">新增学生</el-button>
       </div>
@@ -29,34 +51,51 @@
           </template>
         </el-table-column>
         <el-table-column prop="enrollment_date" label="入学时间" width="110" />
-        <el-table-column label="学科" min-width="160">
+        <el-table-column label="学科" min-width="180">
           <template #default="{ row }">
-            <template v-if="row.subjects && row.subjects.length">
-              <el-tag
-                v-for="s in row.subjects"
-                :key="s.id"
-                size="small"
-                :type="s.category === '学科' ? 'primary' : 'warning'"
-                style="margin-right: 4px"
-              >{{ s.name }}</el-tag>
-            </template>
-            <span v-else style="color:#c0c4cc">未设置</span>
+            <div class="subject-cell">
+              <div class="subject-tags">
+                <template v-if="row.subjects && row.subjects.length">
+                  <el-tag
+                    v-for="s in row.subjects"
+                    :key="s.id"
+                    size="small"
+                    :type="s.category === '学科' ? 'primary' : 'warning'"
+                    style="margin-right: 4px"
+                  >{{ s.name }}</el-tag>
+                </template>
+                <span v-else class="empty-inline">未设置</span>
+              </div>
+              <div v-if="urgentSession(row)" class="mini-progress subject-progress">
+                <div class="mp-track">
+                  <div class="mp-bar" :class="progressClass(row)" :style="{ width: progressWidth(row) + '%' }"></div>
+                </div>
+                <span class="mp-text">{{ urgentSession(row).subject_name }}剩{{ urgentSession(row).remaining }}次</span>
+              </div>
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="guardian_name" label="监护人" width="100" />
         <el-table-column prop="guardian_phone" label="联系电话" width="130" />
-        <el-table-column label="负责教师" width="100">
+        <el-table-column label="负责教师" width="110">
           <template #default="{ row }">
-            <span v-if="row.teacher_name">{{ row.teacher_name }}</span>
-            <span v-else style="color:#c0c4cc">未分配</span>
+            <span v-if="row.teacher_name" class="teacher-cell">
+              <span class="teacher-avatar">{{ row.teacher_name[0] }}</span>{{ row.teacher_name }}
+            </span>
+            <span v-else class="empty-inline">未分配</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="80">
+        <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.status === '在读' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+            <span :class="row.status === '在读' ? 'status-dot is-success' : 'status-dot'">{{ row.status }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="points" label="积分" width="80" />
+        <el-table-column prop="points" label="积分" width="80" align="center">
+          <template #default="{ row }">
+            <span v-if="row.points > 0" class="points-num">★ {{ row.points }}</span>
+            <span v-else class="empty-inline">0</span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="$router.push(`/student/${row.id}`)">学习档案</el-button>
@@ -65,6 +104,9 @@
             <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty :description="keyword || filterSubjectId ? '没有符合条件的学生' : '暂无学生数据，点击右上角新增'" :image-size="80" />
+        </template>
       </el-table>
     </el-card>
 
@@ -247,6 +289,41 @@ const filteredStudents = computed(() => {
     return matchK && matchS
   })
 })
+
+// ===== 纯展示：数据概览（不改变任何业务逻辑） =====
+const summary = computed(() => {
+  const total = students.value.length
+  const active = students.value.filter((s) => s.status === '在读').length
+  const now = new Date()
+  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const thisMonth = students.value.filter((s) => (s.enrollment_date || '').startsWith(ym)).length
+  const subjCount = Object.values(subjectGroups.value).reduce((a, b) => a + b.length, 0)
+  return {
+    total,
+    active,
+    activeRate: total ? Math.round((active / total) * 100) : 0,
+    subjCount,
+    thisMonth,
+  }
+})
+
+// 课时最紧张（剩余最少）的学科，用于进度条展示
+function urgentSession(row) {
+  const ss = (row.subject_sessions || []).filter((x) => x.remaining !== null && x.remaining !== undefined)
+  if (!ss.length) return null
+  return ss.reduce((a, b) => (a.remaining < b.remaining ? a : b))
+}
+function progressWidth(row) {
+  const s = urgentSession(row)
+  if (!s) return 0
+  const total = s.total_sessions || s.remaining
+  if (!total) return 0
+  return Math.max(0, Math.min(100, Math.round((s.remaining / total) * 100)))
+}
+function progressClass(row) {
+  const w = progressWidth(row)
+  return w < 20 ? 'is-danger' : w < 50 ? 'is-warn' : ''
+}
 
 function getSubjectName(sid) {
   const s = subjects.value.find((x) => x.id === sid)
@@ -446,5 +523,56 @@ onMounted(() => {
 .session-hint {
   font-size: 12px;
   color: #909399;
+}
+
+/* ===== 数据直观化（仅展示层） ===== */
+.result-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+.result-count b {
+  color: var(--primary);
+  font-size: 15px;
+}
+.subject-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.subject-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.subject-progress {
+  max-width: 200px;
+}
+.empty-inline {
+  color: #c0c4cc;
+  font-size: 12px;
+}
+.teacher-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.teacher-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary-lighter);
+  color: var(--primary-dark);
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.points-num {
+  color: var(--warning);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 </style>

@@ -1,5 +1,26 @@
 <template>
   <div class="page-container">
+    <!-- 数据概览 -->
+    <div class="mini-stats mb-16">
+      <div class="mini-stat">
+        <div class="ms-label">💰 本月收入</div>
+        <div class="ms-value" style="color: var(--success)">¥{{ summary.monthIncome }}</div>
+      </div>
+      <div class="mini-stat">
+        <div class="ms-label">🧾 收费总流水</div>
+        <div class="ms-value">¥{{ summary.totalFees }}</div>
+      </div>
+      <div class="mini-stat">
+        <div class="ms-label">⚠️ 待缴欠费</div>
+        <div class="ms-value" style="color: var(--danger)">¥{{ summary.totalOverdue }}</div>
+        <div class="ms-sub">{{ summary.overdueCount }} 笔未结清</div>
+      </div>
+      <div class="mini-stat">
+        <div class="ms-label">↩️ 退费 / 减免</div>
+        <div class="ms-value" style="color: var(--warning)">¥{{ summary.totalRefund }}</div>
+      </div>
+    </div>
+
     <el-row :gutter="16">
       <!-- 左边：收费管理 -->
       <el-col :span="15">
@@ -36,19 +57,24 @@
                 <el-table-column prop="payment_period" label="时间段" width="90">
                   <template #default="{ row }">{{ row.payment_period || '-' }}</template>
                 </el-table-column>
-                <el-table-column label="到期日" width="110">
+                <el-table-column label="到期日" width="130">
                   <template #default="{ row }">
-                    <span v-if="row.expire_date" :class="isExpiring(row) ? 'expire-warn-text' : ''">{{ row.expire_date }}</span>
+                    <template v-if="row.expire_date">
+                      <span :class="isExpiring(row) ? 'expire-warn-text' : ''">{{ row.expire_date }}</span>
+                      <el-tag v-if="expireStatus(row)" size="small" :type="expireStatus(row).type" style="margin-left:4px">{{ expireStatus(row).text }}</el-tag>
+                    </template>
                     <span v-else>-</span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="payment_method" label="方式" width="90" />
-                <el-table-column label="次数" width="120" align="center">
+                <el-table-column label="次数" width="150" align="center">
                   <template #default="{ row }">
-                    <template v-if="row.total_sessions">
-                      <span style="color:#10b981;font-weight:600">{{ row.remaining_sessions ?? row.total_sessions }}</span>
-                      <span style="color:#909399;font-size:12px"> / {{ row.total_sessions }}</span>
-                    </template>
+                    <div v-if="row.total_sessions" class="mini-progress" style="max-width:130px">
+                      <div class="mp-track">
+                        <div class="mp-bar" :class="sessionClass(row)" :style="{ width: sessionWidth(row) + '%' }"></div>
+                      </div>
+                      <span class="mp-text">{{ row.remaining_sessions ?? row.total_sessions }}/{{ row.total_sessions }}</span>
+                    </div>
                     <span v-else style="color:#c0c4cc">-</span>
                   </template>
                 </el-table-column>
@@ -67,8 +93,12 @@
                   </template>
                 </el-table-column>
                 <el-table-column prop="item" label="项目" width="120" />
-                <el-table-column prop="amount" label="应收" width="90" />
-                <el-table-column prop="paid_amount" label="已缴" width="90" />
+                <el-table-column prop="amount" label="应收" width="90">
+                  <template #default="{ row }"><span style="color:#f59e0b;font-weight:600">¥{{ row.amount }}</span></template>
+                </el-table-column>
+                <el-table-column prop="paid_amount" label="已缴" width="90">
+                  <template #default="{ row }"><span style="color:#10b981;font-weight:600">¥{{ row.paid_amount }}</span></template>
+                </el-table-column>
                 <el-table-column prop="due_date" label="应缴日期" width="110" />
                 <el-table-column label="状态" width="90">
                   <template #default="{ row }">
@@ -115,8 +145,15 @@
                 <el-table-column prop="total_amount" label="总额" width="90">
                   <template #default="{ row }"><span style="color:#e6a23c;font-weight:600">¥{{ row.total_amount }}</span></template>
                 </el-table-column>
-                <el-table-column prop="paid_periods" label="已缴/期数" width="90">
-                  <template #default="{ row }">{{ row.paid_periods }}/{{ row.periods }}</template>
+                <el-table-column label="进度" width="150">
+                  <template #default="{ row }">
+                    <div class="mini-progress">
+                      <div class="mp-track">
+                        <div class="mp-bar" :class="row.status === '已完成' ? '' : 'is-warn'" :style="{ width: instProgress(row) + '%' }"></div>
+                      </div>
+                      <span class="mp-text">{{ row.paid_periods }}/{{ row.periods }}</span>
+                    </div>
+                  </template>
                 </el-table-column>
                 <el-table-column label="状态" width="90">
                   <template #default="{ row }"><el-tag size="small" :type="row.status === '已完成' ? 'success' : 'warning'">{{ row.status }}</el-tag></template>
@@ -347,6 +384,41 @@ function isExpiring(row) {
   if (!row.expire_date) return false
   const days = (new Date(row.expire_date) - new Date()) / 86400000
   return days <= 5
+}
+
+// ===== 纯展示：数据概览与进度（不改变任何业务逻辑） =====
+const summary = computed(() => {
+  const now = new Date()
+  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const monthIncome = fees.value.filter((f) => (f.pay_date || '').startsWith(ym)).reduce((a, b) => a + (b.amount || 0), 0)
+  const totalFees = fees.value.reduce((a, b) => a + (b.amount || 0), 0)
+  const totalOverdue = overdue.value.reduce((a, b) => a + (b.unpaid || 0), 0)
+  const totalRefund = refunds.value.reduce((a, b) => a + (b.amount || 0), 0)
+  return { monthIncome, totalFees, totalOverdue, totalRefund, overdueCount: overdue.value.length }
+})
+
+function expireStatus(row) {
+  if (!row.expire_date) return null
+  const days = Math.ceil((new Date(row.expire_date) - new Date()) / 86400000)
+  if (days < 0) return { type: 'danger', text: `已到期 ${-days} 天` }
+  if (days <= 5) return { type: 'warning', text: `${days} 天后到期` }
+  return null
+}
+
+function sessionWidth(row) {
+  const t = row.total_sessions
+  const r = row.remaining_sessions ?? t
+  if (!t) return 0
+  return Math.max(0, Math.min(100, Math.round((r / t) * 100)))
+}
+function sessionClass(row) {
+  const w = sessionWidth(row)
+  return w < 20 ? 'is-danger' : w < 50 ? 'is-warn' : ''
+}
+
+function instProgress(row) {
+  if (!row.periods) return 0
+  return Math.max(0, Math.min(100, Math.round(((row.paid_periods || 0) / row.periods) * 100)))
 }
 const invoiceForm = reactive({ student_id: null, item: '', amount: 0, due_date: '' })
 const refundForm = reactive({ student_id: null, invoice_id: null, kind: '减免', amount: 0, reason: '' })

@@ -8,12 +8,43 @@
         </div>
       </template>
 
+      <!-- 顶部小统计（纯展示，基于 teachers 计算） -->
+      <div class="mini-stats teacher-stats">
+        <div class="mini-stat">
+          <div class="ms-label">教师总数</div>
+          <div class="ms-value">{{ teacherStats.total }}</div>
+          <div class="ms-sub">含校长 {{ teacherStats.principal }} 人</div>
+        </div>
+        <div class="mini-stat">
+          <div class="ms-label">启用中</div>
+          <div class="ms-value is-active">{{ teacherStats.active }}</div>
+          <div class="ms-sub">可正常登录使用</div>
+        </div>
+        <div class="mini-stat">
+          <div class="ms-label">已停用</div>
+          <div class="ms-value is-inactive">{{ teacherStats.inactive }}</div>
+          <div class="ms-sub">停用后无法登录</div>
+        </div>
+        <div class="mini-stat">
+          <div class="ms-label">覆盖学科</div>
+          <div class="ms-value">{{ teacherStats.subjects }}</div>
+          <div class="ms-sub">教师学科去重统计</div>
+        </div>
+      </div>
+
       <el-table :data="teachers" stripe>
         <el-table-column prop="username" label="账号" width="110" />
-        <el-table-column prop="name" label="姓名" width="100" />
-        <el-table-column prop="role" label="角色" width="80">
+        <el-table-column prop="name" label="姓名" width="110">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.role === 'principal' ? 'danger' : 'primary'">
+            <div class="name-cell">
+              <span class="teacher-avatar" :class="{ 'is-principal': row.role === 'principal' }">{{ (row.name || '?').slice(0, 1) }}</span>
+              <span class="cell-value">{{ row.name }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="role" label="角色" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" round effect="light" :type="row.role === 'principal' ? 'danger' : 'primary'">
               {{ row.role === 'principal' ? '校长' : '教师' }}
             </el-tag>
           </template>
@@ -25,18 +56,29 @@
                 v-for="s in row.subjects"
                 :key="s.id"
                 size="small"
+                effect="plain"
                 :type="s.category === '学科' ? 'primary' : 'warning'"
                 style="margin-right: 4px"
               >{{ s.name }}</el-tag>
             </template>
-            <span v-else style="color:#c0c4cc">未设置</span>
+            <span v-else class="cell-empty">未设置</span>
           </template>
         </el-table-column>
-        <el-table-column prop="phone" label="电话" width="130" />
-        <el-table-column prop="email" label="邮箱" />
-        <el-table-column label="状态" width="80">
+        <el-table-column prop="phone" label="电话" width="130">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '启用' : '停用' }}</el-tag>
+            <span :class="row.phone ? 'cell-value' : 'cell-empty'">{{ row.phone || '未设置' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="email" label="邮箱">
+          <template #default="{ row }">
+            <span :class="row.email ? 'cell-value' : 'cell-empty'">{{ row.email || '未设置' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <span class="status-dot" :class="row.is_active ? 'is-success' : 'is-danger'">
+              {{ row.is_active ? '启用' : '停用' }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="330">
@@ -148,6 +190,22 @@ const subjectGroups = computed(() => {
     if (s.is_active) groups[s.category]?.push(s)
   })
   return groups
+})
+
+// ===== 纯展示统计（不参与任何业务逻辑，仅用于顶部指标展示） =====
+const teacherStats = computed(() => {
+  const list = teachers.value
+  const principal = list.filter((t) => t.role === 'principal').length
+  const active = list.filter((t) => t.is_active).length
+  const subjectSet = new Set()
+  list.forEach((t) => (t.subjects || []).forEach((s) => subjectSet.add(s.name)))
+  return {
+    total: list.length,
+    principal,
+    active,
+    inactive: list.length - active,
+    subjects: subjectSet.size,
+  }
 })
 
 const form = reactive({ username: '', password: '', name: '', role: 'teacher', phone: '', email: '', subject_ids: [] })
@@ -281,5 +339,49 @@ onMounted(() => {
 :deep(.el-dialog__footer) {
   padding: 12px 24px 20px;
   border-top: 1px solid #f0f0f0;
+}
+
+/* ===== 顶部小统计 ===== */
+.teacher-stats {
+  margin-bottom: 16px;
+}
+.teacher-stats .ms-value.is-active {
+  color: var(--primary);
+}
+.teacher-stats .ms-value.is-inactive {
+  color: var(--text-muted);
+}
+
+/* ===== 姓名头像 ===== */
+.name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.teacher-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary-lighter);
+  color: var(--primary-dark);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.teacher-avatar.is-principal {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+/* ===== 表格单元格空值/普通值 ===== */
+.cell-value {
+  color: var(--text);
+}
+.cell-empty {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 </style>

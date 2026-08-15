@@ -4,22 +4,29 @@
 			<view class="avatar">{{ (store.userName || '?')[0] }}</view>
 			<view class="flex-1" style="margin-left:20rpx">
 				<view class="p-name">{{ store.userName }}</view>
-				<view class="text-muted p-role">{{ roleText }} · {{ store.user && store.user.username }}</view>
+				<view class="p-sub">
+					<text :class="'tag ' + roleTagClass">{{ roleText }}</text>
+					<text class="text-muted p-username">{{ store.user && store.user.username }}</text>
+				</view>
 			</view>
 		</view>
 
 		<view class="card">
 			<view class="menu-item" @click="goIncome" v-if="store.isPrincipal">
-				<text>收费管理</text><text class="arrow">›</text>
+				<view class="mi-left"><text class="mi-emoji">💰</text><text>收费管理</text></view>
+				<text class="arrow">›</text>
 			</view>
 			<view class="menu-item" @click="goTeachers" v-if="store.isPrincipal">
-				<text>教师管理</text><text class="arrow">›</text>
+				<view class="mi-left"><text class="mi-emoji">👩‍🏫</text><text>教师管理</text></view>
+				<text class="arrow">›</text>
 			</view>
 			<view class="menu-item" @click="goSubjects" v-if="store.isPrincipal">
-				<text>学科管理</text><text class="arrow">›</text>
+				<view class="mi-left"><text class="mi-emoji">📚</text><text>学科管理</text></view>
+				<text class="arrow">›</text>
 			</view>
 			<view class="menu-item" @click="goPoints">
-				<text>积分管理</text><text class="arrow">›</text>
+				<view class="mi-left"><text class="mi-emoji">🏆</text><text>积分管理</text></view>
+				<text class="arrow">›</text>
 			</view>
 		</view>
 
@@ -41,6 +48,13 @@ export default {
 			if (r === 'teacher') return '教师';
 			if (r === 'platform') return '平台管理员';
 			return '';
+		},
+		// 纯展示：角色标签配色
+		roleTagClass() {
+			const r = this.store.user && this.store.user.role;
+			if (r === 'platform') return 'tag-danger';
+			if (r === 'principal') return 'tag-warn';
+			return 'tag-primary';
 		}
 	},
 	methods: {
@@ -61,18 +75,26 @@ export default {
 
 <style scoped>
 .page { padding-bottom: 40rpx; }
-.profile { display: flex; align-items: center; }
+.profile {
+	display: flex;
+	align-items: center;
+	background: linear-gradient(135deg, #ffffff, #ecfdf5);
+}
 .avatar {
 	width: 100rpx; height: 100rpx; border-radius: 50%;
-	background: #10b981; color: #fff; text-align: center; line-height: 100rpx; font-size: 44rpx;
+	background: linear-gradient(135deg, #10b981, #059669); color: #fff;
+	text-align: center; line-height: 100rpx; font-size: 44rpx;
 }
 .p-name { font-size: 34rpx; font-weight: 600; }
-.p-role { font-size: 24rpx; margin-top: 6rpx; }
+.p-sub { display: flex; align-items: center; gap: 12rpx; margin-top: 10rpx; }
+.p-username { font-size: 24rpx; }
 .menu-item {
 	display: flex; justify-content: space-between; align-items: center;
 	padding: 28rpx 4rpx; border-bottom: 1rpx solid #f5f5f5; font-size: 30rpx;
 }
 .menu-item:last-child { border-bottom: none; }
+.mi-left { display: flex; align-items: center; gap: 16rpx; }
+.mi-emoji { font-size: 32rpx; }
 .arrow { color: #c0c4cc; font-size: 36rpx; }
 .logout-btn {
 	margin: 40rpx 20rpx; background: #fff; color: #f56c6c;

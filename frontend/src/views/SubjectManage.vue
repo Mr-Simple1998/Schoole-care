@@ -1,5 +1,37 @@
 <template>
   <div class="page-container">
+    <!-- 数据概览：学科 / 非学科 / 启用状态 -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon is-teal"><el-icon :size="24"><Collection /></el-icon></div>
+        <div class="stat-body">
+          <div class="stat-value num-strong">{{ stats.total }}</div>
+          <div class="stat-label">学科总数</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon is-blue"><el-icon :size="24"><Reading /></el-icon></div>
+        <div class="stat-body">
+          <div class="stat-value num-strong">{{ stats.academic }}</div>
+          <div class="stat-label">学科类</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon is-amber"><el-icon :size="24"><Star /></el-icon></div>
+        <div class="stat-body">
+          <div class="stat-value num-strong">{{ stats.nonAcademic }}</div>
+          <div class="stat-label">非学科类</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon is-green"><el-icon :size="24"><CircleCheck /></el-icon></div>
+        <div class="stat-body">
+          <div class="stat-value num-strong">{{ stats.active }}</div>
+          <div class="stat-label">启用中</div>
+        </div>
+      </div>
+    </div>
+
     <el-card shadow="never">
       <div class="toolbar">
         <div class="toolbar-left">
@@ -13,16 +45,33 @@
       </div>
 
       <el-table :data="filteredSubjects" stripe>
-        <el-table-column prop="name" label="学科名称" width="200" />
-        <el-table-column prop="category" label="分类" width="150">
+        <el-table-column prop="name" label="学科名称" min-width="220">
           <template #default="{ row }">
-            <el-tag :type="row.category === '学科' ? 'primary' : 'warning'" size="small">{{ row.category }}</el-tag>
+            <div class="subject-cell">
+              <span class="subject-avatar" :class="row.category === '学科' ? 'is-academic' : 'is-other'">
+                {{ row.name ? row.name.charAt(0) : '?' }}
+              </span>
+              <span class="subject-name">{{ row.name || '—' }}</span>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column prop="sort" label="排序" width="100" />
-        <el-table-column label="状态" width="100">
+        <el-table-column prop="category" label="分类" width="140" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.is_active ? 'success' : 'info'" size="small">{{ row.is_active ? '启用' : '停用' }}</el-tag>
+            <el-tag :type="row.category === '学科' ? 'primary' : 'warning'" effect="light" round size="small">
+              {{ row.category }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="排序" width="100" align="center">
+          <template #default="{ row }">
+            <span class="sort-badge">#{{ row.sort }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="120" align="center">
+          <template #default="{ row }">
+            <span class="status-dot" :class="row.is_active ? 'is-success' : 'is-info'">
+              {{ row.is_active ? '启用中' : '已停用' }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="180">
@@ -34,6 +83,9 @@
             <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty description="暂无学科数据，点击右上角「新增学科」开始添加" :image-size="90" />
+        </template>
       </el-table>
     </el-card>
 
@@ -85,6 +137,17 @@ const filteredSubjects = computed(() => {
   return subjects.value.filter((s) => s.category === filterCat.value)
 })
 
+// 纯展示：顶部概览统计（仅由现有数据派生，不触碰任何接口）
+const stats = computed(() => {
+  const list = subjects.value
+  return {
+    total: list.length,
+    academic: list.filter((s) => s.category === '学科').length,
+    nonAcademic: list.filter((s) => s.category === '非学科').length,
+    active: list.filter((s) => s.is_active).length,
+  }
+})
+
 async function loadSubjects() {
   subjects.value = await request.get('/subjects')
 }
@@ -133,6 +196,33 @@ onMounted(loadSubjects)
 </script>
 
 <style scoped>
+/* 顶部概览统计卡 */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.stat-body {
+  min-width: 0;
+}
+.stat-icon.is-teal {
+  background: linear-gradient(135deg, #34d399, #059669);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.25);
+}
+.stat-icon.is-blue {
+  background: linear-gradient(135deg, #60a5fa, #2563eb);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.25);
+}
+.stat-icon.is-amber {
+  background: linear-gradient(135deg, #fbbf24, #d97706);
+  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.25);
+}
+.stat-icon.is-green {
+  background: linear-gradient(135deg, #4ade80, #16a34a);
+  box-shadow: 0 6px 16px rgba(34, 197, 94, 0.25);
+}
+
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -144,7 +234,52 @@ onMounted(loadSubjects)
   border: 1px solid #e5e7eb;
 }
 
-/* 分类标签颜色更新 */
+/* 学科名称：首字头像 + 名称 */
+.subject-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.subject-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.subject-avatar.is-academic {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+}
+.subject-avatar.is-other {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+.subject-name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* 排序徽标 */
+.sort-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 分类标签颜色更新（学科=蓝 / 非学科=琥珀） */
 :deep(.el-tag--primary) {
   --el-tag-bg-color: #e0f2fe;
   --el-tag-border-color: #bae6fd;

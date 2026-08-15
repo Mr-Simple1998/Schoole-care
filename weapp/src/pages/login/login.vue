@@ -1,16 +1,28 @@
 <template>
 	<view class="login-page">
-		<view class="logo-title">机构后台管理</view>
-		<view class="logo-sub">微信授权 · 账号绑定登录</view>
+		<!-- 品牌区（纯展示） -->
+		<view class="brand">
+			<view class="brand-logo">📚</view>
+			<view class="logo-title">机构后台管理</view>
+			<view class="logo-sub">微信授权 · 账号绑定登录</view>
+		</view>
 
-		<view class="card login-card">
+		<!-- 登录卡片 -->
+		<view class="login-card">
+			<view class="card-title"><view class="bar"></view>账号登录</view>
 			<view class="field">
 				<text class="label">用户名</text>
-				<input class="input" v-model="username" placeholder="请输入用户名" />
+				<view class="input-wrap">
+					<text class="input-icon">👤</text>
+					<input class="input" v-model="username" placeholder="请输入用户名" />
+				</view>
 			</view>
 			<view class="field">
 				<text class="label">密码</text>
-				<input class="input" v-model="password" password placeholder="请输入密码" />
+				<view class="input-wrap">
+					<text class="input-icon">🔒</text>
+					<input class="input" v-model="password" password placeholder="请输入密码" />
+				</view>
 			</view>
 			<button class="btn-primary login-btn" @click="doBind" :loading="loading">登录并绑定微信</button>
 			<view class="tip">首次需输入校长/教师账号密码完成微信绑定，之后自动登录</view>
@@ -61,47 +73,100 @@ export default {
 <style scoped>
 .login-page {
 	min-height: 100vh;
-	background: linear-gradient(160deg, #10b981 0%, #0ea5e9 100%);
-	padding: 120rpx 40rpx;
+	box-sizing: border-box;
+	background: linear-gradient(160deg, #0f9d74 0%, #10b981 45%, #0ea5e9 100%);
+	padding: 140rpx 44rpx 80rpx;
+}
+
+/* 品牌区 */
+.brand {
+	text-align: center;
+	margin-bottom: 64rpx;
+}
+.brand-logo {
+	width: 128rpx;
+	height: 128rpx;
+	line-height: 128rpx;
+	border-radius: 36rpx;
+	background: rgba(255, 255, 255, 0.18);
+	border: 2rpx solid rgba(255, 255, 255, 0.35);
+	backdrop-filter: blur(8rpx);
+	text-align: center;
+	font-size: 64rpx;
+	margin: 0 auto 28rpx;
+	box-shadow: 0 12rpx 32rpx rgba(0, 0, 0, 0.12);
 }
 .logo-title {
 	color: #fff;
-	font-size: 56rpx;
+	font-size: 48rpx;
 	font-weight: 700;
-	text-align: center;
+	letter-spacing: 2rpx;
+	text-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.15);
 }
 .logo-sub {
-	color: rgba(255, 255, 255, 0.85);
-	font-size: 28rpx;
-	text-align: center;
-	margin: 16rpx 0 60rpx;
+	color: rgba(255, 255, 255, 0.88);
+	font-size: 26rpx;
+	margin-top: 14rpx;
+	letter-spacing: 1rpx;
 }
+
+/* 登录卡片 */
 .login-card {
-	padding: 40rpx 32rpx;
+	background: #fff;
+	border-radius: 24rpx;
+	padding: 44rpx 36rpx;
+	box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.12);
 }
-.field {
-	margin-bottom: 28rpx;
+.login-card .card-title {
+	font-size: 32rpx;
+	margin-bottom: 32rpx;
 }
+.field { margin-bottom: 28rpx; }
 .label {
 	display: block;
 	font-size: 26rpx;
 	color: #606266;
-	margin-bottom: 10rpx;
+	margin-bottom: 12rpx;
+}
+.input-wrap {
+	display: flex;
+	align-items: center;
+	background: #f5f7fa;
+	border-radius: 14rpx;
+	padding: 0 24rpx;
+	border: 1rpx solid transparent;
+	transition: border-color 0.2s;
+}
+.input-wrap:focus-within { border-color: #10b981; }
+.input-icon {
+	font-size: 28rpx;
+	margin-right: 16rpx;
+	flex-shrink: 0;
 }
 .input {
-	background: #f5f7fa;
-	border-radius: 12rpx;
-	padding: 20rpx 24rpx;
+	flex: 1;
+	background: transparent;
+	padding: 20rpx 0;
 	font-size: 30rpx;
 }
 .login-btn {
-	margin-top: 20rpx;
+	margin-top: 36rpx;
 	width: 100%;
+	height: 92rpx;
+	line-height: 92rpx;
+	font-size: 30rpx;
+	font-weight: 600;
+	background: linear-gradient(90deg, #10b981, #059669);
+	border-radius: 14rpx;
+	box-shadow: 0 8rpx 20rpx rgba(16, 185, 129, 0.3);
+	letter-spacing: 2rpx;
 }
+.login-btn::after { border: none; }
 .tip {
-	margin-top: 24rpx;
-	font-size: 24rpx;
-	color: #909399;
+	margin-top: 26rpx;
+	font-size: 22rpx;
+	color: #b0b3b8;
 	text-align: center;
+	line-height: 1.6;
 }
 </style>

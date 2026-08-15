@@ -5,39 +5,89 @@
 			<view class="flex">
 				<view class="avatar">{{ student.name[0] }}</view>
 				<view class="flex-1">
-					<view class="s-name">{{ student.name }} <text class="s-no">{{ student.student_no }}</text></view>
+					<view class="s-name">{{ student.name }}<text class="s-no">{{ student.student_no }}</text>
+						<text :class="student.status === '在读' ? 'tag tag-success' : 'tag tag-grey'" class="status-tag">{{ student.status }}</text>
+					</view>
 					<view class="text-muted s-meta">
 						{{ student.school || '' }} {{ student.grade || '' }} · 入学 {{ student.enrollment_date || '-' }}
 					</view>
-					<view class="s-meta"><text class="text-warn">积分 {{ student.points }}</text> · {{ student.status }}</view>
+					<view class="s-meta" v-if="student.teacher_name"><text class="text-info">负责教师：{{ student.teacher_name }}</text></view>
 				</view>
+			</view>
+		</view>
+
+		<!-- 统计卡片 -->
+		<view class="stat-grid">
+			<view class="stat-card is-orange">
+				<view class="stat-top">
+					<text class="stat-label">积分</text>
+					<text class="stat-emoji">⭐</text>
+				</view>
+				<text class="stat-num">{{ student.points || 0 }}</text>
+				<text class="stat-sub">积分余额</text>
+			</view>
+			<view class="stat-card is-purple">
+				<view class="stat-top">
+					<text class="stat-label">总课时</text>
+					<text class="stat-emoji">📚</text>
+				</view>
+				<text class="stat-num">{{ sessionTotals.total }}</text>
+				<text class="stat-sub">全部科目</text>
+			</view>
+			<view class="stat-card is-blue">
+				<view class="stat-top">
+					<text class="stat-label">已核销</text>
+					<text class="stat-emoji">✅</text>
+				</view>
+				<text class="stat-num">{{ sessionTotals.used }}</text>
+				<text class="stat-sub">已使用课时</text>
+			</view>
+			<view class="stat-card is-green">
+				<view class="stat-top">
+					<text class="stat-label">剩余课时</text>
+					<text class="stat-emoji">⏳</text>
+				</view>
+				<text class="stat-num">{{ sessionTotals.remain }}</text>
+				<text class="stat-sub">待核销</text>
+			</view>
+		</view>
+
+		<!-- 到期提醒横幅 -->
+		<view class="banner" :class="expireBanner.type" v-if="expireBanner">
+			<view>
+				<view class="banner-title">{{ expireBanner.title }}</view>
+				<view class="banner-desc">{{ expireBanner.desc }}</view>
 			</view>
 		</view>
 
 		<!-- 课时核销概览 -->
 		<view class="card" v-if="student.subject_sessions && student.subject_sessions.length">
-			<view class="card-title">课时核销情况</view>
+			<view class="card-title"><text class="bar"></text>课时核销情况</view>
 			<view v-for="ss in student.subject_sessions" :key="ss.subject_id" class="session-item">
-				<view class="flex">
-					<text class="flex-1">{{ ss.subject_name }}</text>
-					<text v-if="ss.total_sessions !== null" :class="ss.remaining > 0 ? 'text-primary' : 'text-danger'">
-						已核 {{ ss.used_sessions }} / {{ ss.total_sessions }}（剩 {{ ss.remaining }}）
-					</text>
-					<text v-else class="text-muted">按到期时间</text>
+				<view class="session-head">
+					<text class="session-name">{{ ss.subject_name }}</text>
+					<text v-if="ss.total_sessions !== null" class="session-count">已核 {{ ss.used_sessions }} / {{ ss.total_sessions }}<text class="text-muted">（剩 {{ ss.remaining }}）</text></text>
+					<text v-else class="tag tag-info">按到期时间</text>
+				</view>
+				<view v-if="ss.total_sessions !== null" class="session-progress">
+					<view class="progress" :class="progressClass(ss)">
+						<view class="progress-inner" :style="{ width: progressWidth(ss) + '%' }"></view>
+					</view>
+					<text class="progress-text">{{ progressWidth(ss) }}%</text>
 				</view>
 				<view v-if="ss.total_sessions === null" class="text-muted expire-line">
-					<text v-if="ss.expire_date">
-						到期：{{ ss.expire_date }}
-						<text :class="expireClass(ss.expire_date)">{{ expireText(ss.expire_date) }}</text>
-					</text>
-					<text v-else>时长：{{ ss.duration_value }}{{ ss.duration_unit }}（首次打卡后开始计时）</text>
+					<view v-if="ss.expire_date" class="expire-row">
+						<text>到期：{{ ss.expire_date }}</text>
+						<text :class="'tag ' + expireTagClass(ss.expire_date)">{{ expireTagText(ss.expire_date) }}</text>
+					</view>
+					<view v-else>时长：{{ ss.duration_value }}{{ ss.duration_unit }}（首次打卡后开始计时）</view>
 				</view>
 			</view>
 		</view>
 
 		<!-- 功能入口 -->
 		<view class="card">
-			<view class="card-title">功能</view>
+			<view class="card-title"><text class="bar"></text>功能</view>
 			<view class="quick-grid">
 				<view class="quick-item" @click="openAttend"><text>考勤打卡</text></view>
 				<view class="quick-item" @click="openScore"><text>成绩</text></view>
@@ -119,17 +169,23 @@
 
 		<!-- 记录列表 -->
 		<view class="card" v-if="scores.length">
-			<view class="card-title">近期成绩</view>
+			<view class="card-title"><text class="bar"></text>近期成绩</view>
 			<view v-for="sc in scores.slice(0,5)" :key="sc.id" class="record-item">
-				<text class="flex-1">{{ sc.subject }} · {{ sc.exam_type }}</text>
-				<text class="text-primary">{{ sc.score }} / {{ sc.full_score }}</text>
+				<view class="flex-1">
+					<view class="record-title">{{ sc.subject }} <text class="text-muted record-type">{{ sc.exam_type }}</text></view>
+					<view class="text-muted record-sub" v-if="sc.exam_date">{{ sc.exam_date }}</view>
+				</view>
+				<text class="score-num">{{ sc.score }}<text class="score-full"> / {{ sc.full_score }}</text></text>
 			</view>
 		</view>
 		<view class="card" v-if="hwList.length">
-			<view class="card-title">近期作业</view>
+			<view class="card-title"><text class="bar"></text>近期作业</view>
 			<view v-for="h in hwList.slice(0,5)" :key="h.id" class="record-item">
-				<text class="flex-1">{{ h.subject }} · {{ h.complete_status }}</text>
-				<text class="text-muted">{{ h.assign_date }}</text>
+				<view class="flex-1">
+					<view class="record-title">{{ h.subject }}</view>
+					<view class="text-muted record-sub">{{ h.assign_date || '-' }}</view>
+				</view>
+				<text :class="'tag ' + hwStatusClass(h.complete_status)">{{ h.complete_status }}</text>
 			</view>
 		</view>
 	</view>
@@ -160,6 +216,35 @@ export default {
 		attendSubjectName() {
 			const s = this.attendSubjects.find(x => x.id === this.attendSubjectId);
 			return s ? s.name : '请选择学科';
+		},
+		/* 纯展示：课时汇总（仅由现有 subject_sessions 数据派生） */
+		sessionTotals() {
+			const list = (this.student && this.student.subject_sessions) || [];
+			let total = 0, used = 0, remain = 0;
+			list.forEach(ss => {
+				if (typeof ss.total_sessions === 'number') total += ss.total_sessions;
+				if (typeof ss.used_sessions === 'number') used += ss.used_sessions;
+				if (typeof ss.remaining === 'number') remain += ss.remaining;
+			});
+			return { total, used, remain };
+		},
+		/* 纯展示：到期提醒横幅（仅对按到期时间计时的科目判断） */
+		expireBanner() {
+			const list = (this.student && this.student.subject_sessions) || [];
+			let expired = null, soon = null;
+			list.forEach(ss => {
+				if (!ss.expire_date || ss.total_sessions !== null) return;
+				const days = this.daysLeft(ss.expire_date);
+				if (days < 0 && (!expired || days < expired.days)) expired = { name: ss.subject_name, days };
+				if (days >= 0 && days <= 5 && (!soon || days < soon.days)) soon = { name: ss.subject_name, days };
+			});
+			if (expired) {
+				return { type: 'is-danger', title: expired.name + ' 课时已到期', desc: '已到期 ' + (-expired.days) + ' 天，请及时安排续费' };
+			}
+			if (soon) {
+				return { type: 'is-warn', title: soon.name + ' 课时即将到期', desc: '还剩 ' + soon.days + ' 天到期，请关注续费' };
+			}
+			return null;
 		}
 	},
 	onLoad(options) {
@@ -193,6 +278,39 @@ export default {
 			const today = new Date(); today.setHours(0,0,0,0);
 			const exp = new Date(d); exp.setHours(0,0,0,0);
 			return Math.round((exp - today) / 86400000);
+		},
+		/* 纯展示：课时进度条 */
+		progressWidth(ss) {
+			const t = ss.total_sessions, u = ss.used_sessions || 0;
+			if (!t) return 0;
+			return Math.min(100, Math.round(u / t * 100));
+		},
+		progressClass(ss) {
+			const t = ss.total_sessions, u = ss.used_sessions || 0;
+			if (!t) return '';
+			const remainRatio = (t - u) / t;
+			if (remainRatio <= 0.2) return 'is-danger';
+			if (remainRatio <= 0.5) return 'is-warn';
+			return '';
+		},
+		/* 纯展示：到期标签 */
+		expireTagClass(d) {
+			const days = this.daysLeft(d);
+			if (days < 0) return 'tag-danger';
+			if (days <= 5) return 'tag-warn';
+			return 'tag-success';
+		},
+		expireTagText(d) {
+			const days = this.daysLeft(d);
+			if (days < 0) return '已到期 ' + (-days) + ' 天';
+			if (days === 0) return '今天到期';
+			return '剩 ' + days + ' 天';
+		},
+		/* 纯展示：作业完成状态标签 */
+		hwStatusClass(st) {
+			if (st === '已完成') return 'tag-success';
+			if (st === '未完成') return 'tag-warn';
+			return 'tag-grey';
 		},
 		openAttend() { this.showAttend = true; },
 		async doAttend() {
@@ -240,13 +358,20 @@ export default {
 .avatar {
 	width: 90rpx; height: 90rpx; border-radius: 50%;
 	background: #10b981; color: #fff; text-align: center; line-height: 90rpx; font-size: 40rpx; margin-right: 20rpx;
+	flex-shrink: 0;
 }
-.s-name { font-size: 34rpx; font-weight: 600; }
-.s-no { font-size: 22rpx; color: #909399; margin-left: 10rpx; }
+.s-name { font-size: 34rpx; font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; }
+.s-no { font-size: 22rpx; color: #909399; margin-left: 10rpx; font-weight: 400; }
+.status-tag { margin-left: 12rpx; }
 .s-meta { font-size: 24rpx; margin-top: 6rpx; }
 .session-item { padding: 14rpx 0; border-bottom: 1rpx solid #f0f0f0; }
 .session-item:last-child { border-bottom: none; }
-.expire-line { font-size: 24rpx; margin-top: 6rpx; }
+.session-head { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
+.session-name { font-size: 28rpx; font-weight: 500; color: #303133; }
+.session-count { font-size: 24rpx; color: #10b981; font-variant-numeric: tabular-nums; }
+.session-progress { display: flex; align-items: center; margin-top: 12rpx; }
+.expire-line { font-size: 24rpx; margin-top: 12rpx; }
+.expire-row { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; }
 .quick-grid { display: flex; flex-wrap: wrap; }
 .quick-item {
 	width: calc(50% - 12rpx);
@@ -255,9 +380,14 @@ export default {
 }
 .quick-item:nth-child(2n) { margin-right: 0; }
 .record-item {
-	display: flex; padding: 12rpx 0; border-bottom: 1rpx solid #f5f5f5; font-size: 26rpx;
+	display: flex; align-items: center; padding: 16rpx 0; border-bottom: 1rpx solid #f5f5f5; font-size: 26rpx;
 }
 .record-item:last-child { border-bottom: none; }
+.record-title { font-size: 27rpx; color: #303133; }
+.record-type { font-size: 22rpx; margin-left: 8rpx; }
+.record-sub { font-size: 22rpx; margin-top: 4rpx; }
+.score-num { font-size: 32rpx; font-weight: 700; color: #10b981; font-variant-numeric: tabular-nums; }
+.score-full { font-size: 22rpx; font-weight: 400; color: #c0c4cc; }
 .mask {
 	position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.45); z-index: 99;
 	display: flex; align-items: center; justify-content: center;

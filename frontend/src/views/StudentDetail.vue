@@ -28,6 +28,32 @@
       </div>
     </el-card>
 
+    <!-- 数据概览 -->
+    <div class="mini-stats mb-16">
+      <div class="mini-stat">
+        <div class="ms-label">⭐ 积分</div>
+        <div class="ms-value" style="color: var(--warning)">{{ student.points ?? 0 }}</div>
+      </div>
+      <div class="mini-stat">
+        <div class="ms-label">📋 出勤率</div>
+        <div class="ms-value" style="color: var(--success)">{{ attStats.attendance_rate }}%</div>
+        <div class="ms-sub">{{ attStats.total }} 条考勤记录</div>
+      </div>
+      <div class="mini-stat">
+        <div class="ms-label">📝 成绩记录</div>
+        <div class="ms-value" style="color: var(--info)">{{ scores.length }}</div>
+      </div>
+      <div class="mini-stat">
+        <div class="ms-label">📖 作业 / 🎓 表现</div>
+        <div class="ms-value">{{ homework.length }} / {{ performances.length }}</div>
+      </div>
+      <div class="mini-stat">
+        <div class="ms-label">⏳ 剩余课时</div>
+        <div class="ms-value" :style="{ color: totalRemaining > 0 ? 'var(--success)' : 'var(--danger)' }">{{ totalRemaining }}</div>
+        <div class="ms-sub">{{ subjectSessionCount }} 门计次学科</div>
+      </div>
+    </div>
+
     <el-tabs v-model="activeTab" type="border-card">
       <!-- 成绩 -->
       <el-tab-pane label="学习成绩" name="scores">
@@ -39,7 +65,9 @@
           <el-table-column prop="subject" label="科目" width="90" />
           <el-table-column prop="exam_type" label="考试类型" width="100" />
           <el-table-column prop="score" label="得分" width="90">
-            <template #default="{ row }"><b>{{ row.score }}</b> / {{ row.full_score }}</template>
+            <template #default="{ row }">
+              <b :style="{ color: scoreColor(row.score, row.full_score) }">{{ row.score }}</b> / {{ row.full_score }}
+            </template>
           </el-table-column>
           <el-table-column prop="exam_date" label="日期" width="110" />
           <el-table-column prop="remark" label="备注" show-overflow-tooltip />
@@ -240,7 +268,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Download } from '@element-plus/icons-vue'
@@ -281,6 +309,20 @@ function attType(s) {
 }
 function hwType(s) {
   return { '优秀': 'success', '已完成': 'primary', '未完成': 'danger' }[s] || 'info'
+}
+
+// ===== 纯展示：概览统计与成绩配色（不改变任何业务逻辑） =====
+const totalRemaining = computed(() =>
+  (student.value.subject_sessions || []).reduce((a, s) => a + (s.remaining ?? 0), 0)
+)
+const subjectSessionCount = computed(() =>
+  (student.value.subject_sessions || []).filter((s) => s.remaining !== null && s.remaining !== undefined).length
+)
+function scoreColor(score, full) {
+  const p = full ? score / full : score / 100
+  if (p >= 0.9) return '#10b981'
+  if (p >= 0.6) return '#f59e0b'
+  return '#ef4444'
 }
 
 // 到期时间颜色和标签
