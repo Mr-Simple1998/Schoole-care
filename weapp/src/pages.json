@@ -1,0 +1,61 @@
+{
+	"pages": [
+		{
+			"path": "pages/login/login",
+			"style": { "navigationBarTitleText": "登录" }
+		},
+		{
+			"path": "pages/dashboard/dashboard",
+			"style": { "navigationBarTitleText": "工作台" }
+		},
+		{
+			"path": "pages/student/list",
+			"style": { "navigationBarTitleText": "学生管理" }
+		},
+		{
+			"path": "pages/student/add",
+			"style": { "navigationBarTitleText": "新增学生" }
+		},
+		{
+			"path": "pages/student/detail",
+			"style": { "navigationBarTitleText": "学生档案" }
+		},
+		{
+			"path": "pages/income/income",
+			"style": { "navigationBarTitleText": "收费管理" }
+		},
+		{
+			"path": "pages/points/points",
+			"style": { "navigationBarTitleText": "积分管理" }
+		},
+		{
+			"path": "pages/teachers/teachers",
+			"style": { "navigationBarTitleText": "教师管理" }
+		},
+		{
+			"path": "pages/subjects/subjects",
+			"style": { "navigationBarTitleText": "学科管理" }
+		},
+		{
+			"path": "pages/mine/mine",
+			"style": { "navigationBarTitleText": "我的" }
+		}
+	],
+	"tabBar": {
+		"color": "#909399",
+		"selectedColor": "#10b981",
+		"backgroundColor": "#ffffff",
+		"borderStyle": "black",
+		"list": [
+			{ "pagePath": "pages/dashboard/dashboard", "text": "工作台" },
+			{ "pagePath": "pages/student/list", "text": "学生" },
+			{ "pagePath": "pages/mine/mine", "text": "我的" }
+		]
+	},
+	"globalStyle": {
+		"navigationBarTextStyle": "white",
+		"navigationBarTitleText": "机构管理",
+		"navigationBarBackgroundColor": "#10b981",
+		"backgroundColor": "#f5f7fa"
+	}
+}
