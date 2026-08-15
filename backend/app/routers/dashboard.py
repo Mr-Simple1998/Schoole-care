@@ -10,12 +10,28 @@ from ..models_income import FeeRecord, Invoice
 from ..models_learning import Score, Attendance
 from ..models_subject import StudentSubject, Subject
 from ..models_points import PointRecord
-from ..security import get_current_user
+from ..security import get_current_user, is_head_role
 
 router = APIRouter()
 
 REMIND_DAYS = 7  # 提前 7 天提醒机构即将到期
 FEE_REMIND_DAYS = 5  # 提前 5 天提醒学生费用即将到期
+
+
+def _scope_students(q, current_user: User):
+    """按角色限定学生数据范围（教师=自己负责；校区负责人=本校区；总校长归属校区后=本校区）"""
+    if current_user.role == UserRole.TEACHER:
+        return q.filter(Student.teacher_id == current_user.id)
+    if is_head_role(current_user.role):
+        return q.filter(Student.campus_id == current_user.campus_id)
+    if current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
+        return q.filter(Student.campus_id == current_user.campus_id)
+    return q
+
+
+def _is_finance_visible(current_user: User) -> bool:
+    """是否可查看收入数据：教师不可见（收入置 0），校区负责人/总校长可见"""
+    return current_user.role != UserRole.TEACHER
 
 
 def _org_expire_info(db: Session, org_id: int):
@@ -49,15 +65,14 @@ def _org_expire_info(db: Session, org_id: int):
 def dashboard_overview(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """工作台总览统计"""
     student_q = db.query(Student).filter(Student.org_id == current_user.org_id, Student.deleted == False)  # noqa: E712
-    if current_user.role == UserRole.TEACHER:
-        student_q = student_q.filter(Student.teacher_id == current_user.id)
+    student_q = _scope_students(student_q, current_user)
 
     total_students = student_q.count()
     today = datetime.utcnow().date()
 
     # 本月收入（教师不可见机构收入，置 0）
     month_start = today.replace(day=1)
-    if current_user.role == UserRole.TEACHER:
+    if not _is_finance_visible(current_user):
         month_income = 0
     else:
         month_income = db.query(func.coalesce(func.sum(FeeRecord.amount), 0)).filter(
@@ -72,8 +87,7 @@ def dashboard_overview(current_user: User = Depends(get_current_user), db: Sessi
 
     # 今日考勤
     today_att_q = db.query(Attendance).filter(Attendance.date == today, Attendance.org_id == current_user.org_id)
-    if current_user.role == UserRole.TEACHER:
-        today_att_q = today_att_q.join(Student).filter(Student.teacher_id == current_user.id)
+    today_att_q = _scope_students(today_att_q, current_user)
     today_attendance = today_att_q.count()
 
     # 待缴账单数
@@ -99,10 +113,9 @@ def dashboard_overview(current_user: User = Depends(get_current_user), db: Sessi
 
 
 def _fee_expire_reminders(db: Session, current_user: User, today: date):
-    """返回费用到期提醒列表。校长看全部学生，教师只看自己负责的学生。"""
+    """返回费用到期提醒列表。总校长看全部（归属校区后看本校区），校区负责人看本校区，教师只看自己负责的学生。"""
     student_q = db.query(Student).filter(Student.org_id == current_user.org_id, Student.deleted == False)  # noqa: E712
-    if current_user.role == UserRole.TEACHER:
-        student_q = student_q.filter(Student.teacher_id == current_user.id)
+    student_q = _scope_students(student_q, current_user)
     students = student_q.all()
     if not students:
         return []
@@ -184,6 +197,10 @@ def recent_income(current_user: User = Depends(get_current_user), db: Session = 
     q = db.query(FeeRecord).filter(FeeRecord.pay_date >= start, FeeRecord.org_id == current_user.org_id)
     if current_user.role == UserRole.TEACHER:
         q = q.join(Student).filter(Student.teacher_id == current_user.id)
+    elif is_head_role(current_user.role):
+        q = q.join(Student).filter(Student.campus_id == current_user.campus_id)
+    elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
+        q = q.join(Student).filter(Student.campus_id == current_user.campus_id)
     records = q.all()
     buckets = {}
     for i in range(14):

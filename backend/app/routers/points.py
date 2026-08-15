@@ -5,11 +5,24 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Student, User
+from ..models import Student, User, UserRole
 from ..models_points import PointRecord, PointSetting, Prize, Redemption
-from ..security import get_current_user
+from ..security import get_current_user, is_head_role
 
 router = APIRouter()
+
+
+def _check_student_scope(db: Session, current_user: User, student: Student):
+    """校验学生是否在当前用户数据范围内"""
+    if current_user.role == UserRole.TEACHER:
+        if student.teacher_id != current_user.id:
+            raise HTTPException(status_code=403, detail="只能操作自己负责的学生")
+    elif is_head_role(current_user.role):
+        if student.campus_id != current_user.campus_id:
+            raise HTTPException(status_code=403, detail="只能操作本校区学生")
+    elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
+        if student.campus_id != current_user.campus_id:
+            raise HTTPException(status_code=403, detail="只能操作本校区学生")
 
 
 # ---------- 积分加扣 ----------
@@ -26,6 +39,7 @@ def change_points(data: PointChange, current_user: User = Depends(get_current_us
     student = db.query(Student).filter(Student.id == data.student_id, Student.org_id == current_user.org_id, Student.deleted == False).first()  # noqa: E712
     if not student:
         raise HTTPException(status_code=404, detail="学生不存在")
+    _check_student_scope(db, current_user, student)
     rec = PointRecord(
         student_id=data.student_id, change=data.change, reason=data.reason,
         category=data.category, created_by=current_user.id, created_at=datetime.utcnow(),
@@ -111,6 +125,7 @@ def redeem(data: RedeemCreate, current_user: User = Depends(get_current_user), d
     prize = db.query(Prize).filter(Prize.id == data.prize_id, Prize.is_active == True, Prize.org_id == current_user.org_id).first()  # noqa: E712
     if not student or not prize:
         raise HTTPException(status_code=404, detail="学生或奖品不存在")
+    _check_student_scope(db, current_user, student)
     if (student.points or 0) < prize.cost_points:
         raise HTTPException(status_code=400, detail="积分不足")
     if prize.stock == 0:
@@ -148,7 +163,11 @@ def list_redemptions(current_user: User = Depends(get_current_user), db: Session
 def leaderboard(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(Student).order_by(Student.points.desc())
     q = q.filter(Student.org_id == current_user.org_id, Student.deleted == False)  # noqa: E712
-    if current_user.role == "teacher":
+    if current_user.role == UserRole.TEACHER:
         q = q.filter(Student.teacher_id == current_user.id)
+    elif is_head_role(current_user.role):
+        q = q.filter(Student.campus_id == current_user.campus_id)
+    elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
+        q = q.filter(Student.campus_id == current_user.campus_id)
     students = q.limit(50).all()
     return [{"id": s.id, "name": s.name, "points": s.points or 0, "rank": i + 1} for i, s in enumerate(students)]

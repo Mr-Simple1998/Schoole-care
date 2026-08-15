@@ -29,6 +29,14 @@
 			"style": { "navigationBarTitleText": "积分管理" }
 		},
 		{
+			"path": "pages/campus/campus",
+			"style": { "navigationBarTitleText": "校区管理" }
+		},
+		{
+			"path": "pages/campus/transactions",
+			"style": { "navigationBarTitleText": "收支明细" }
+		},
+		{
 			"path": "pages/teachers/teachers",
 			"style": { "navigationBarTitleText": "教师管理" }
 		},

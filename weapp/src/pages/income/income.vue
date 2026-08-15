@@ -1,6 +1,6 @@
 <template>
 	<view class="page">
-		<button class="btn-primary add-fee" @click="showAdd=true" v-if="store.isPrincipal">＋ 新增收费</button>
+		<button class="btn-primary add-fee" @click="showAdd=true" v-if="store.isPrincipal || store.isSubPrincipal">＋ 新增收费</button>
 
 		<!-- 统计卡片（纯展示，数据来自 fees / overdue） -->
 		<view class="stat-grid">
@@ -31,7 +31,7 @@
 		</view>
 
 		<!-- 欠费提醒横幅 -->
-		<view v-if="overdue.length && store.isPrincipal" class="banner is-danger">
+		<view v-if="overdue.length && (store.isPrincipal || store.isSubPrincipal)" class="banner is-danger">
 			<view>
 				<view class="banner-title">⚠️ 有 {{ overdue.length }} 笔欠费待收</view>
 				<view class="banner-desc">合计欠费 ¥{{ totalOverdue }}，请及时联系家长缴费</view>
@@ -39,7 +39,7 @@
 		</view>
 
 		<!-- 欠费明细 -->
-		<view class="card" v-if="overdue.length && store.isPrincipal">
+		<view class="card" v-if="overdue.length && (store.isPrincipal || store.isSubPrincipal)">
 			<view class="card-title"><text class="bar"></text>欠费明细</view>
 			<view v-for="(o, i) in overdue" :key="i" class="info-row">
 				<view class="ir-left">

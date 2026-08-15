@@ -10,7 +10,9 @@ export const useUserStore = defineStore('user', {
     isLoggedIn: (state) => !!state.token,
     isPlatform: (state) => state.user?.role === 'platform',
     isPrincipal: (state) => state.user?.role === 'principal',
+    isSubPrincipal: (state) => state.user?.role === 'sub_principal' || state.user?.role === 'campus_head',
     isTeacher: (state) => state.user?.role === 'teacher',
+    isCampusHead: (state) => state.user?.role === 'campus_head',
   },
   actions: {
     async login(username, password) {

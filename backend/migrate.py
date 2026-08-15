@@ -13,6 +13,7 @@ from app import models_income  # noqa: F401
 from app import models_learning  # noqa: F401
 from app import models_points  # noqa: F401
 from app import models_subject  # noqa: F401
+from app import models_campus  # noqa: F401
 from app.models import Organization, User, UserRole
 from app.security import hash_password
 
@@ -38,6 +39,9 @@ def main():
         print("补充字段：")
         add_column_if_missing(conn, "users", "org_id", "INTEGER")
         add_column_if_missing(conn, "users", "avatar", "VARCHAR(255)")
+        # 校区（2026：校区管理功能）
+        add_column_if_missing(conn, "students", "campus_id", "INTEGER")
+        add_column_if_missing(conn, "users", "campus_id", "INTEGER")
         for t in ["students", "subjects", "fee_records", "invoices", "refund_adjustments",
                   "installments", "installment_records", "scores", "attendances", "homework",
                   "class_performances", "point_records", "point_settings", "prizes", "redemptions"]:

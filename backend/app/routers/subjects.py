@@ -3,9 +3,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Student, User
+from ..models import Student, User, UserRole
 from ..models_subject import Subject, StudentSubject
-from ..security import get_current_user, get_current_principal
+from ..security import get_current_user, get_current_principal, is_head_role
 
 router = APIRouter()
 
@@ -41,8 +41,12 @@ def list_subjects(current_user: User = Depends(get_current_user), db: Session = 
 def subject_stats(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """按学科/分类统计在读学生人数（用于工作台）"""
     student_q = db.query(Student).filter(Student.deleted == False)  # noqa: E712
-    if current_user.role == "teacher":
+    if current_user.role == UserRole.TEACHER:
         student_q = student_q.filter(Student.teacher_id == current_user.id)
+    elif is_head_role(current_user.role):
+        student_q = student_q.filter(Student.campus_id == current_user.campus_id)
+    elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
+        student_q = student_q.filter(Student.campus_id == current_user.campus_id)
 
     # 各学科人数
     from sqlalchemy import func

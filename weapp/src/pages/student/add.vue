@@ -23,6 +23,12 @@
 				<text class="label">学校</text>
 				<input class="input" v-model="form.school" placeholder="就读学校" />
 			</view>
+			<view class="field" v-if="campuses.length">
+				<text class="label">所属校区</text>
+				<picker :range="campusLabels" @change="e => form.campus_id = campusIds[e.detail.value]">
+					<view class="input picker-box">{{ campusName || '请选择（可选）' }}<text class="arrow">›</text></view>
+				</picker>
+			</view>
 			<view class="field">
 				<text class="label">年级</text>
 				<picker :range="grades" @change="e => form.grade=grades[e.detail.value]">
@@ -92,18 +98,38 @@ export default {
 			grades: GRADES,
 			units: UNITS,
 			subjects: [],
+			campuses: [],
 			selected: {}, // subject_id -> cfg
 			form: {
 				name: '', gender: '', school: '', grade: '',
-				guardian_name: '', guardian_phone: '', enrollment_date: ''
+				guardian_name: '', guardian_phone: '', enrollment_date: '',
+				campus_id: null
 			},
 			loading: false
 		};
 	},
+	computed: {
+		campusLabels() {
+			return this.campuses.map(c => c.name);
+		},
+		campusIds() {
+			return this.campuses.map(c => c.id);
+		},
+		campusName() {
+			const c = this.campuses.find(x => x.id === this.form.campus_id);
+			return c ? c.name : '';
+		}
+	},
 	onLoad() {
 		this.loadSubjects();
+		this.loadCampuses();
 	},
 	methods: {
+		async loadCampuses() {
+			try {
+				this.campuses = await get('/campuses/options');
+			} catch (e) {}
+		},
 		async loadSubjects() {
 			try {
 				this.subjects = await get('/subjects');

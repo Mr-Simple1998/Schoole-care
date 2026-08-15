@@ -12,16 +12,20 @@
 		</view>
 
 		<view class="card">
-			<view class="menu-item" @click="goIncome" v-if="store.isPrincipal">
+			<view class="menu-item" @click="goIncome" v-if="store.isPrincipal || store.isSubPrincipal">
 				<view class="mi-left"><text class="mi-emoji">💰</text><text>收费管理</text></view>
 				<text class="arrow">›</text>
 			</view>
-			<view class="menu-item" @click="goTeachers" v-if="store.isPrincipal">
+			<view class="menu-item" @click="goTeachers" v-if="store.isPrincipal || store.isSubPrincipal">
 				<view class="mi-left"><text class="mi-emoji">👩‍🏫</text><text>教师管理</text></view>
 				<text class="arrow">›</text>
 			</view>
 			<view class="menu-item" @click="goSubjects" v-if="store.isPrincipal">
 				<view class="mi-left"><text class="mi-emoji">📚</text><text>学科管理</text></view>
+				<text class="arrow">›</text>
+			</view>
+			<view class="menu-item" @click="goCampus" v-if="store.isPrincipal || store.isSubPrincipal">
+				<view class="mi-left"><text class="mi-emoji">🏫</text><text>校区管理</text></view>
 				<text class="arrow">›</text>
 			</view>
 			<view class="menu-item" @click="goPoints">
@@ -44,7 +48,8 @@ export default {
 	computed: {
 		roleText() {
 			const r = this.store.user && this.store.user.role;
-			if (r === 'principal') return '校长';
+			if (r === 'principal') return '总校长';
+			if (r === 'sub_principal' || r === 'campus_head') return '校长管理号';
 			if (r === 'teacher') return '教师';
 			if (r === 'platform') return '平台管理员';
 			return '';
@@ -54,6 +59,7 @@ export default {
 			const r = this.store.user && this.store.user.role;
 			if (r === 'platform') return 'tag-danger';
 			if (r === 'principal') return 'tag-warn';
+			if (r === 'sub_principal' || r === 'campus_head') return 'tag-success';
 			return 'tag-primary';
 		}
 	},
@@ -62,6 +68,7 @@ export default {
 		goTeachers() { uni.navigateTo({ url: '/pages/teachers/teachers' }); },
 		goSubjects() { uni.navigateTo({ url: '/pages/subjects/subjects' }); },
 		goPoints() { uni.navigateTo({ url: '/pages/points/points' }); },
+		goCampus() { uni.navigateTo({ url: '/pages/campus/campus' }); },
 		doLogout() {
 			uni.showModal({
 				title: '提示',

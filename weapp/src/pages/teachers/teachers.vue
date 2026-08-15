@@ -10,7 +10,7 @@
 					<text class="stat-emoji">👩‍🏫</text>
 				</view>
 				<text class="stat-num">{{ teacherStats.total }}</text>
-				<text class="stat-sub">本机构全部教师账号</text>
+				<text class="stat-sub">教师账号统计</text>
 				<view class="stat-accent"></view>
 			</view>
 			<view class="stat-card is-green">
@@ -48,7 +48,7 @@
 				<view class="ir-left">
 					<view class="ir-title">
 						<text>{{ t.name }}</text>
-						<text class="tag" :class="t.role === 'principal' ? 'tag-info' : 'tag-primary'">{{ t.role === 'principal' ? '校长' : '教师' }}</text>
+						<text class="tag" :class="roleTagClass(t.role)">{{ roleText(t.role) }}</text>
 					</view>
 					<view class="ir-sub">
 						<text>@{{ t.username }}</text>
@@ -93,6 +93,21 @@ export default {
 		};
 	},
 	computed: {
+		// 纯展示：角色文案与配色
+		roleText() {
+			return (r) => {
+				if (r === 'principal') return '总校长';
+				if (r === 'sub_principal' || r === 'campus_head') return '校长管理号';
+				return '教师';
+			};
+		},
+		roleTagClass() {
+			return (r) => {
+				if (r === 'principal') return 'tag-info';
+				if (r === 'sub_principal' || r === 'campus_head') return 'tag-warn';
+				return 'tag-primary';
+			};
+		},
 		// 纯展示：概览统计
 		teacherStats() {
 			const list = this.teachers || [];

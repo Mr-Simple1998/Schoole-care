@@ -89,12 +89,14 @@ const roleType = computed(() => {
   const r = userStore.user?.role
   if (r === 'platform') return 'danger'
   if (r === 'principal') return 'danger'
+  if (r === 'sub_principal' || r === 'campus_head') return 'success'
   return 'primary'
 })
 const roleText = computed(() => {
   const r = userStore.user?.role
   if (r === 'platform') return '平台管理员'
-  if (r === 'principal') return '校长'
+  if (r === 'principal') return '总校长'
+  if (r === 'sub_principal' || r === 'campus_head') return '校长管理号'
   return '教师'
 })
 

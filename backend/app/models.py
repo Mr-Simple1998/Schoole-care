@@ -18,9 +18,11 @@ PLAN_TYPES = {
 
 
 class UserRole(str, Enum):
-    PLATFORM = "platform"    # 平台超级管理员（开户）
-    PRINCIPAL = "principal"  # 校长/管理员
-    TEACHER = "teacher"      # 教师
+    PLATFORM = "platform"      # 平台超级管理员（开户）
+    PRINCIPAL = "principal"    # 总校长（机构创始人，平台开户创建；操作限自己校区，可看全校只读总览）
+    SUB_PRINCIPAL = "sub_principal"  # 校区负责人（校长管理号，总校长在校区管理页开号；仅看本校区）
+    TEACHER = "teacher"        # 教师
+    CAMPUS_HEAD = "campus_head"  # 校区负责人（旧角色，与新 sub_principal 同一套权限逻辑，存量兼容）
 
 
 class Organization(Base):
@@ -76,10 +78,12 @@ class User(Base):
     email = Column(String(100), nullable=True)
     phone = Column(String(20), nullable=True)
     wx_openid = Column(String(64), nullable=True, index=True)  # 微信小程序 openid（本地开发模式存模拟值）
+    campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)  # 所属校区（教师/校区负责人）
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     organization = relationship("Organization", back_populates="users")
+    campus = relationship("Campus")
     students = relationship("Student", back_populates="teacher")
 
 
@@ -98,6 +102,7 @@ class Student(Base):
     guardian_phone = Column(String(20), nullable=True)
     org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True, index=True)  # 所属机构
     teacher_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # 负责教师
+    campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)  # 所属校区（可选）
     enrollment_date = Column(Date, nullable=True)      # 入学日期
     status = Column(String(20), default="在读")        # 在读/休学/退学
     points = Column(Integer, default=0)                # 积分余额
@@ -106,6 +111,7 @@ class Student(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     teacher = relationship("User", back_populates="students")
+    campus = relationship("Campus")
     fee_records = relationship("FeeRecord", back_populates="student")
     invoices = relationship("Invoice", back_populates="student")
     scores = relationship("Score", back_populates="student")
@@ -113,3 +119,7 @@ class Student(Base):
     homework = relationship("Homework", back_populates="student")
     class_performances = relationship("ClassPerformance", back_populates="student")
     point_records = relationship("PointRecord", back_populates="student")
+
+
+# 确保校区模型注册（避免循环导入；models_campus 从本模块导入 Base）
+from . import models_campus  # noqa: E402,F401

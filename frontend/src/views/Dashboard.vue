@@ -15,7 +15,7 @@
 
     <!-- 统计卡片 -->
     <el-row :gutter="16">
-      <el-col :span="userStore.isPrincipal ? 6 : 12" v-for="card in statCards" :key="card.label">
+      <el-col :span="(userStore.isPrincipal || userStore.isSubPrincipal) ? 6 : 12" v-for="card in statCards" :key="card.label">
         <div class="stat-card" :style="{ animationDelay: card.delay + 'ms' }">
           <div class="stat-icon" :style="{ background: card.color }">
             <el-icon :size="24"><component :is="card.icon" /></el-icon>
@@ -59,8 +59,8 @@
       </el-card>
     </transition>
 
-    <!-- 图表区（收入趋势仅校长） -->
-    <el-row v-if="userStore.isPrincipal" :gutter="16" class="mt-16">
+    <!-- 图表区（收入趋势仅总校长/校区负责人可见本校区收入） -->
+    <el-row v-if="userStore.isPrincipal || userStore.isSubPrincipal" :gutter="16" class="mt-16">
       <el-col :span="16">
         <el-card shadow="never">
           <div class="card-title">近14天收入趋势</div>
@@ -99,7 +99,7 @@
     </el-row>
 
     <!-- 教师：学科/非学科人数 -->
-    <el-row v-if="!userStore.isPrincipal" :gutter="16" class="mt-16">
+    <el-row v-if="userStore.isTeacher" :gutter="16" class="mt-16">
       <el-col :span="12">
         <el-card shadow="never">
           <div class="card-title">学科 / 非学科人数</div>
@@ -156,7 +156,7 @@ const statCards = computed(() => {
     { key: 'total_students', label: '在读学生', value: overview.value.total_students ?? 0, icon: 'User', color: 'linear-gradient(135deg, #3b82f6, #6366f1)', delay: 0 },
     { key: 'today_attendance', label: '今日考勤', value: overview.value.today_attendance ?? 0, icon: 'Calendar', color: 'linear-gradient(135deg, #ef4444, #f97316)', delay: 150 },
   ]
-  if (userStore.isPrincipal) {
+  if (userStore.isPrincipal || userStore.isSubPrincipal) {
     cards.splice(1, 0,
       { key: 'month_income', label: '本月收入(元)', value: overview.value.month_income ?? 0, icon: 'Money', color: 'linear-gradient(135deg, #10b981, #059669)', prefix: '¥', delay: 50 },
       { key: 'total_unpaid', label: '待缴欠费(元)', value: overview.value.total_unpaid ?? 0, icon: 'Warning', color: 'linear-gradient(135deg, #f59e0b, #d97706)', prefix: '¥', delay: 100 },
@@ -170,9 +170,11 @@ const quickLinks = computed(() => {
     { label: '学生管理', path: '/students', icon: 'User', color: '#3b82f6' },
     { label: '积分奖励', path: '/points', icon: 'Trophy', color: '#f59e0b' },
   ]
-  if (userStore.isPrincipal) {
+  if (userStore.isPrincipal || userStore.isSubPrincipal) {
     links.push({ label: '收费管理', path: '/income', icon: 'Money', color: '#10b981' })
     links.push({ label: '教师管理', path: '/teachers', icon: 'Avatar', color: '#ef4444' })
+  }
+  if (userStore.isPrincipal) {
     links.push({ label: '学科管理', path: '/subjects', icon: 'Grid', color: '#8b5cf6' })
   }
   return links
@@ -199,7 +201,7 @@ async function loadData() {
   overview.value = await request.get('/dashboard/overview')
   // 触发数字动画
   statCards.value.forEach(card => animateValue(card.key, card.value))
-  if (userStore.isPrincipal) {
+  if (userStore.isPrincipal || userStore.isSubPrincipal) {
     const income = await request.get('/dashboard/recent-income')
     renderIncomeChart(income)
   }

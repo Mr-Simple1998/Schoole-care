@@ -23,7 +23,7 @@
 				</view>
 				<text class="stat-num">{{ overview.total_students || 0 }}</text>
 			</view>
-			<view class="stat-card is-green" v-if="!store.isTeacher">
+			<view class="stat-card is-green" v-if="store.isPrincipal || store.isSubPrincipal">
 				<view class="stat-top">
 					<text class="stat-label">本月收入</text>
 					<text class="stat-emoji">💰</text>
@@ -37,7 +37,7 @@
 				</view>
 				<text class="stat-num">{{ overview.today_attendance || 0 }}</text>
 			</view>
-			<view class="stat-card is-red" v-if="store.isPrincipal">
+			<view class="stat-card is-red" v-if="store.isPrincipal || store.isSubPrincipal">
 				<view class="stat-top">
 					<text class="stat-label">总欠费</text>
 					<text class="stat-emoji">⚠️</text>
@@ -70,9 +70,9 @@
 			<view class="card-title"><text class="bar"></text>快捷操作</view>
 			<view class="quick-grid">
 				<view class="quick-item" @click="goStudents"><text class="qi-emoji">👥</text><text>学生管理</text></view>
-				<view class="quick-item" @click="goIncome" v-if="store.isPrincipal"><text class="qi-emoji">💰</text><text>收费管理</text></view>
+				<view class="quick-item" @click="goIncome" v-if="store.isPrincipal || store.isSubPrincipal"><text class="qi-emoji">💰</text><text>收费管理</text></view>
 				<view class="quick-item" @click="goSubjects" v-if="store.isPrincipal"><text class="qi-emoji">📚</text><text>学科管理</text></view>
-				<view class="quick-item" @click="goTeachers" v-if="store.isPrincipal"><text class="qi-emoji">👩‍🏫</text><text>教师管理</text></view>
+				<view class="quick-item" @click="goTeachers" v-if="store.isPrincipal || store.isSubPrincipal"><text class="qi-emoji">👩‍🏫</text><text>教师管理</text></view>
 				<view class="quick-item" @click="goPoints"><text class="qi-emoji">🏆</text><text>积分管理</text></view>
 			</view>
 		</view>
@@ -93,7 +93,8 @@ export default {
 	computed: {
 		roleText() {
 			const r = this.store.user && this.store.user.role;
-			if (r === 'principal') return '校长';
+			if (r === 'principal') return '总校长';
+			if (r === 'sub_principal' || r === 'campus_head') return '校长管理号';
 			if (r === 'teacher') return '教师';
 			if (r === 'platform') return '平台管理员';
 			return '';

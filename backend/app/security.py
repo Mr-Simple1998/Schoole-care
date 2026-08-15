@@ -67,7 +67,19 @@ def require_role(*roles: UserRole):
 
 def get_current_principal(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != UserRole.PRINCIPAL:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅校长可执行此操作")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅总校长可执行此操作")
+    return current_user
+
+
+def is_head_role(role) -> bool:
+    """是否为校区负责人类角色（新 sub_principal 或存量 campus_head）"""
+    return role in (UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD)
+
+
+def get_current_principal_or_head(current_user: User = Depends(get_current_user)) -> User:
+    """总校长或校区负责人可访问（校区负责人只能操作本校区数据）"""
+    if current_user.role not in (UserRole.PRINCIPAL, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅总校长或校区负责人可执行此操作")
     return current_user
 
 

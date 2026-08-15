@@ -1,6 +1,6 @@
-# 机构后台学习管理系统 — 项目说明（v2 · 2026-08-15 更新）
+# 机构后台学习管理系统 — 项目说明（v3 · 2026-08-16 更新）
 
-> 后端托管的机构后台管理系统，含平台开户、校长/教师双端、学生档案、收费核销、积分、考勤等功能。
+> 后端托管的机构后台管理系统，含平台开户、总校长/校长管理号/教师多端、学生档案、收费核销、积分、考勤、校区管理等功能。
 > 本文档用于快速了解项目架构、开发约定、踩坑记录，避免下次更新时重新扫描全项目或重踩环境问题。
 
 ---
@@ -11,8 +11,9 @@
 |----|----|
 | 仓库 | `git@github.com:Mr-Simple1998/tuoguan-system.git`（私有，SSH 认证） |
 | 本地位置 | `C:\Users\DZY\Desktop\后台管理系统`（克隆于 2026-08-15） |
-| 分支 | `main`（跟踪 origin/main），git 工作区干净 |
-| 三端 UI | **已全部优化**（PC 10 页 + 小程序 10 页），业务逻辑/后端 0 改动 |
+| 分支 | `main`（跟踪 origin/main） |
+| 角色体系 | **已梳理**（总校长 principal / 校长管理号 sub_principal / 教师 teacher / 平台 platform，详见 §4） |
+| 三端 | PC 端 + 小程序均支持新角色与校区数据隔离（详见 §8） |
 | 后端 | FastAPI，端口 8000（运行中），SQLite `backend/tortoise.db` 已初始化 |
 | 前端 | Vue3 + Vite，端口 5173（运行中） |
 | 小程序 | 已 `build:mp-weixin` 构建，产物 `weapp/dist/build/mp-weixin`，已导入微信开发者工具 |
@@ -43,12 +44,13 @@ C:\Users\DZY\Desktop\后台管理系统\
 │  │  ├─ database.py        # 引擎 / SessionLocal / get_db
 │  │  ├─ security.py        # JWT、密码哈希、get_current_user / get_current_principal
 │  │  ├─ seed_admin.py      # 初始化默认管理员 + 默认学科
-│  │  ├─ models.py          # Organization / Payment / User / Student
+│  │  ├─ models.py          # Organization / Payment / User / Student（UserRole 含 principal/sub_principal/teacher/platform/campus_head）
 │  │  ├─ models_income.py   # FeeRecord / Invoice（收费）
 │  │  ├─ models_learning.py # Score / Attendance / Homework / ClassPerformance
 │  │  ├─ models_points.py   # PointRecord（积分）
 │  │  ├─ models_subject.py  # Subject / StudentSubject（学科+课时）
-│  │  └─ routers\           # auth/students/income/learning/points/dashboard/subjects/profile/platform
+│  │  ├─ models_campus.py   # Campus / CampusTransaction（校区 + 手工收支）
+│  │  └─ routers\           # auth/students/income/learning/points/dashboard/subjects/profile/platform/campuses
 │  └─ tortoise.db           # SQLite 数据库（已初始化）
 ├─ frontend\                # PC 管理端（Vue3 + Element Plus + ECharts）
 │  └─ src\
@@ -112,13 +114,17 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 | 角色 | 说明 | 默认账号 |
 |------|------|----------|
 | `platform` | 平台超级管理员（机构开户） | `admin / admin123` |
-| `principal` | 校长/管理员（本机构全部数据） | 由平台「机构开户」创建 |
-| `teacher`  | 教师（仅自己负责的学生） | 由校长在「教师管理」创建 |
+| `principal` | **总校长**（机构创始人）：平台开户时创建；操作范围=自己所在校区，可看全校各校区运营**只读总览**（资金/人员/学生等） | 由平台「机构开户」创建 |
+| `sub_principal` | **校区负责人（校长管理号）**：由总校长在「校区管理」页开号；只能查看/操作本校区全部数据（学生/教师/收支/收入等） | 由总校长在校区管理页开号 |
+| `campus_head` | 校区负责人（**旧角色**，与新 `sub_principal` 同一套权限逻辑，存量账号兼容，不迁移） | 存量数据 |
+| `teacher`  | 教师（仅自己负责的学生） | 由总校长/校区负责人在「教师管理」创建 |
 
 角色权限差异（重要）：
-- 教师端任何查询/操作只能访问 `teacher_id == 当前用户.id` 的学生，否则返回 403。
-- 校长端按 `org_id` 过滤，可看机构全部学生。
-- 路由守卫：`/teachers`、`/subjects`、`/income` 仅校长；`/platform` 仅平台管理员。
+- **教师端**任何查询/操作只能访问 `teacher_id == 当前用户.id` 的学生，否则返回 403。
+- **校区负责人**（sub_principal / campus_head）：数据范围=自己校区**全部**学生（非自己名下）；可管理本校区教师（新增教师固定为 teacher 角色）；可登记/查看本校区收支、看本校区收入；**不可**操作/查看其他校区数据（403）。
+- **总校长**（principal）：归属校区后（`campus_id` 有值）操作范围=本校区（学生/教师/收支/收入均按本校区过滤）；未归属校区（存量）保持全校可操作；校区管理页始终可见**全部校区**概况与汇总行（只读总览），可设置校区、为各校区开/换/取消校长管理号。
+- **新增教师账号固定为 `teacher` 角色**（`/auth/register` 只允许创建教师；总校长/校长管理号由平台/总校长另行开号）。
+- 路由守卫：`/deleted-students` 仅总校长；`/platform` 仅平台管理员；`/income`、`/teachers`、`/subjects`（只读）、`/campuses` 对总校长+校区负责人开放。
 
 ---
 
@@ -126,14 +132,17 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 
 1. **打卡唯一性**：同一学生同一学科同一天只能打卡一次，重复返回 400「该学生今天已打卡，一天只能打卡一次」。
 2. **教师数据隔离**：教师只能查看/操作自己负责的学生（JOIN Student 过滤 `teacher_id`）。
-3. **课时收费**：一次性收完，按次核销，次数可跨学期使用直至用完。
-4. **学生打卡核销**：打卡成功后，自动查找该生最早有剩余次数的收费记录，核销 1 次（`used_sessions + 1`）。
-5. **学科课时**：学生-学科关联 `StudentSubject` 支持两种计费方式——
+3. **校区负责人数据隔离**：校区负责人（sub_principal / 存量 campus_head）只能查看/操作**本校区**全部学生与数据（过滤 `campus_id == 当前用户.campus_id`），跨校区返回 403。
+4. **总校长归属校区**：principal 设置 `campus_id` 后，操作范围自动限定本校区（学生/教师/收支/收入均按校区过滤）；未设置时保持全校（存量兼容）。校区管理页仍显示全校只读总览。
+5. **课时收费**：一次性收完，按次核销，次数可跨学期使用直至用完。
+6. **学生打卡核销**：打卡成功后，自动查找该生最早有剩余次数的收费记录，核销 1 次（`used_sessions + 1`）。
+7. **学科课时**：学生-学科关联 `StudentSubject` 支持两种计费方式——
    - 按课时：`total_sessions` 有值，打卡时 `used_sessions + 1`，剩余 = total - used。
    - 按到期时间：`total_sessions` 为 NULL，配置 `duration_value` + `duration_unit`（天/月/年），到期日 = 该生第一次在该学科打卡的日期 + 时长。
-6. **到期提醒**：Dashboard 提前 5 天（`FEE_REMIND_DAYS=5`）提醒收费到期/学科到期；机构账号提前 7 天（`REMIND_DAYS=7`）。
-7. **学生删除**：软删除（`deleted=True`），保留收费历史；同时清除积分数据。
-8. **收入权限**：教师角色不可见机构月收入——`dashboard.py` 对 `UserRole.TEACHER` 将 `month_income` 置 0；小程序工作台「本月收入」卡片 `v-if="!store.isTeacher"` 隐藏。
+8. **到期提醒**：Dashboard 提前 5 天（`FEE_REMIND_DAYS=5`）提醒收费到期/学科到期；机构账号提前 7 天（`REMIND_DAYS=7`）。
+9. **学生删除**：软删除（`deleted=True`），保留收费历史；同时清除积分数据。
+10. **收入权限**：教师角色不可见机构月收入——`dashboard.py` 对 `UserRole.TEACHER` 将 `month_income` 置 0；小程序工作台「本月收入」卡片 `v-if="!store.isTeacher"` 隐藏。校区负责人/总校长可见（本校区/归属校区口径）。
+11. **新增教师固定为 teacher**：`/auth/register` 只允许 `role == "teacher"`；校区负责人（sub_principal）开号只能通过总校长在「校区管理」页操作（`POST /campuses/{id}/head`）。
 
 ---
 
@@ -156,15 +165,32 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 | `/student/:id` | 学生档案（指标条 + 成绩着色 + 课时进度） |
 | `/income` | 收费管理（收支概览 + 到期标签 + 核销进度） |
 | `/teachers` | 教师管理（统计卡 + 角色标签 + 状态圆点） |
-| `/subjects` | 学科管理（统计卡 + 分类标签） |
+| `/subjects` | 学科管理（统计卡 + 分类标签；校区负责人只读） |
 | `/points` | 积分奖励（金银铜排行榜条 + 涨跌配色） |
+| `/campuses` | 校区管理（总校长全校只读总览 + 校区设置/负责人开号；负责人仅本校区） |
 | `/platform` | 机构开户管理（平台） |
-| `/deleted-students` | 已删除学生（概览 + 语义化列表） |
+| `/deleted-students` | 已删除学生（仅总校长，概览 + 语义化列表） |
 
 ---
 
 ## 8. 近期改动记录
 
+- **2026-08-16 · 角色体系梳理（总校长端 / 校长管理号）**：
+  - 新增角色 `sub_principal`（校区负责人·校长管理号）：由总校长在「校区管理」页开号（`POST /campuses/{id}/head` 新建账号或指定教师，角色改为 `SUB_PRINCIPAL`）；权限与旧 `campus_head` 完全一致（存量 campus_head 账号兼容，零迁移）。
+  - **总校长（principal）数据范围**：归属校区后（`campus_id` 有值）学生/教师/收支/收入操作均限本校区；未归属（存量）保持全校；校区管理页始终可见全校各校区概况+汇总行（只读总览）。
+  - **校区负责人数据范围**：从「等同教师（仅自己负责学生）」改为「本校区全部学生」，各 router（students/learning/income/points/dashboard/subjects/campuses）统一用 `is_head_role()` + `_scope_*` 过滤；跨校区访问 403。
+  - **新增教师不再有校长角色**：`/auth/register` 只允许 `role == "teacher"`；PC 端「新增教师账号」表单移除「校长（管理员）」选项；校区负责人开号统一走校区管理页。
+  - 前端：`userStore` 新增 `isSubPrincipal`；路由/菜单对 `sub_principal` 开放（income/teachers/subjects 只读/campuses）；角色文案统一为「总校长 / 校长管理号 / 教师」；PC 端与小程序端同步。
+  - 后端冒烟测试通过：平台开户→总校长→开校长管理号→数据隔离（跨校区 403）→归属校区后操作限本校区。
+- **校区管理功能（校长 + 校区负责人）**：
+  - 新增 `Campus`（校区）与 `CampusTransaction`（手工收支）模型；`Student`/`User` 增加 `campus_id`（可选归属，历史数据为"未分校区"）。
+  - 新增角色 `campus_head`（校区负责人）：只能登记/查看自己校区的收支；学生数据权限等同教师。**可进行教师管理**（仅限本校区：列表/新建/编辑/停用/删除/重置密码，新教师自动归属本校区）。
+  - 校长可设置校区（名称/地址/电话/备注/停用）。**校区负责人由总校长手动编辑**：设置负责人时可「手动新建账号」（姓名/登录账号/密码/电话一键创建）或「从现有教师中选择」，支持随时更换/取消（原负责人自动降为教师）。
+  - **总校长可查看各校区情况**：校区管理页每校区卡片显示资金（本月收入/支出/结余/待缴）、学生数、教师数、今日打卡；卡片上的"学生/教师"可点击直达对应校区筛选列表；学生管理/教师管理页新增"按校区筛选"（校区负责人自动限定本校区）。
+  - 收支口径：学费收入按缴费学生所属校区自动归属；手工登记非学费收入（餐费/杂费/其他）与支出（房租/工资/水电/其他）；本月口径 + 全机构汇总行 + "未分校区"分组。
+  - 接口：`/api/campuses`（列表/概况/CRUD）、`/api/campuses/{id}/head`、`/api/campuses/transactions`（登记/明细/删除）、`/api/campuses/options`（下拉）。
+  - 前端：PC 新增"校区管理"页（`/campuses`，校长+负责人可见）；小程序新增校区页与收支明细页；学生/教师表单支持选择校区。
+  - 数据库迁移：`backend/migrate.py` 已加 `students.campus_id`、`users.campus_id` 两列（SQLite 手动 ALTER）。
 - **2026-08-15 · 三端 UI 全面优化**：PC 10 页 + 小程序 10 页；统计卡片+数字高亮、状态标签+颜色语义化、进度条（课时/分期/积分占比）、提醒横幅、排行榜条、空状态优化；teal 主题统一；**仅展示层，逻辑/后端 0 改动**（详见 §12）。
 - 学生新增表单支持「学校信息」「课时数」「时长（天/月/年）」。
 - 学生档案「课时核销情况」进度条；非核销课时学科显示到期时间与状态标签。
@@ -178,7 +204,7 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 
 - 改字段需同步：模型 → 路由 Pydantic → 前端表单 → 前端展示。
 - 前端请求统一走 `@/utils/request`（自动带 token、统一错误提示）。
-- 角色判断用 `userStore.isPrincipal / isTeacher / isPlatform`。
+- 角色判断用 `userStore.isPrincipal / isSubPrincipal / isTeacher / isPlatform`（校区负责人新旧角色统一走 `isSubPrincipal`，后端对应 `is_head_role()`）。
 - **UI 改动遵循 `C:\Users\DZY\Desktop\后台管理系统\.tmp\UI_GUIDE.md` 设计规范**（含全局工具类清单），PC 端工具类在 `frontend/src/style.css`，小程序端在 `weapp/src/App.vue` 全局样式 + `uni.scss` 主题变量。
 - 新增展示型统计/格式化：只加纯展示 computed/helper，不动请求逻辑（本次优化全部遵循此原则）。
 
@@ -197,7 +223,7 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 | **开发者工具（实际安装位置，注意是 E 盘）** | `E:\微信小程序开发工具\微信web开发者工具\cli.bat`（旧文档写的 D:\ 有误） |
 | CLI 导入命令（已验证可行） | `& "E:\微信小程序开发工具\微信web开发者工具\cli.bat" open --project "C:\Users\DZY\Desktop\后台管理系统\weapp\dist\build\mp-weixin"` |
 
-> 说明：`admin` 为平台账号（无机构 ID），看不到机构学生数据；小程序应使用校长/教师账号登录绑定。
+> 说明：`admin` 为平台账号（无机构 ID），看不到机构学生数据；小程序应使用总校长/校长管理号/教师账号登录绑定。
 
 ---
 

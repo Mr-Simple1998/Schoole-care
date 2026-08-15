@@ -35,6 +35,10 @@
               <el-option v-for="s in subjectGroups['非学科']" :key="s.id" :label="s.name" :value="s.id" />
             </el-option-group>
           </el-select>
+          <el-select v-if="userStore.isPrincipal" v-model="filterCampusId" placeholder="全部校区" clearable style="width: 160px" @change="handleSearch">
+            <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
+            <el-option label="未分校区" :value="0" />
+          </el-select>
           <span class="result-count">共 <b>{{ filteredStudents.length }}</b> 名学生</span>
         </div>
         <el-button type="primary" :icon="Plus" class="btn-add" @click="openDialog()">新增学生</el-button>
@@ -45,6 +49,12 @@
         <el-table-column prop="name" label="姓名" width="110" />
         <el-table-column prop="gender" label="性别" width="70" />
         <el-table-column prop="school" label="学校" width="120" />
+        <el-table-column label="校区" width="110">
+          <template #default="{ row }">
+            <span v-if="row.campus_name" class="campus-cell">{{ row.campus_name }}</span>
+            <span v-else class="empty-inline">未分校区</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="grade" label="年级" width="110">
           <template #default="{ row }">
             <span style="white-space: nowrap">{{ row.grade || '-' }}</span>
@@ -147,9 +157,13 @@
             </el-option-group>
           </el-select>
         </el-form-item>
+        <el-form-item label="所属校区">
+          <el-select v-model="form.campus_id" placeholder="选择校区（可选）" clearable style="width: 100%">
+            <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="所属学科">
-          <el-select v-model="form.subject_ids" multiple filterable placeholder="可多选（学科/非学科）" style="width: 100%" @change="onSubjectChange">
-            <el-option-group v-if="subjectGroups.学科.length" label="学科">
+          <el-select v-model="form.subject_ids" multiple filterable placeholder="可多选（学科/非学科）" style="width: 100%" @change="onSubjectChange">            <el-option-group v-if="subjectGroups.学科.length" label="学科">
               <el-option v-for="s in subjectGroups.学科" :key="s.id" :label="s.name" :value="s.id" />
             </el-option-group>
             <el-option-group v-if="subjectGroups['非学科'].length" label="非学科">
@@ -241,14 +255,20 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import { useUserStore } from '@/stores/user'
 
+const route = useRoute()
+const userStore = useUserStore()
 const keyword = ref('')
 const filterSubjectId = ref(null)
+const filterCampusId = ref(null)
 const students = ref([])
 const subjects = ref([])
+const campuses = ref([])
 const dialogVisible = ref(false)
 const saving = ref(false)
 const formRef = ref()
@@ -269,6 +289,7 @@ const subjectGroups = computed(() => {
 const emptyForm = () => ({
   id: null, name: '', gender: '男', school: '', grade: '',
   guardian_name: '', guardian_phone: '', enrollment_date: '', notes: '',
+  campus_id: null,
   subject_ids: [],
   sessionMap: {},  // { subject_id: total_sessions }
   expireMap: {},   // { subject_id: expire_date }
@@ -286,7 +307,10 @@ const filteredStudents = computed(() => {
   return students.value.filter((s) => {
     const matchK = !k || s.name.includes(k) || s.student_no.includes(k)
     const matchS = !filterSubjectId.value || (s.subjects || []).some((x) => x.id === filterSubjectId.value)
-    return matchK && matchS
+    const matchC =
+      filterCampusId.value == null ||
+      (filterCampusId.value === 0 ? !s.campus_id : s.campus_id === filterCampusId.value)
+    return matchK && matchS && matchC
   })
 })
 
@@ -356,6 +380,14 @@ async function loadSubjects() {
   subjects.value = await request.get('/subjects')
 }
 
+async function loadCampuses() {
+  try {
+    campuses.value = await request.get('/campuses/options')
+  } catch (e) {
+    campuses.value = []
+  }
+}
+
 function openDialog(row) {
   Object.assign(form, emptyForm(), row || {})
   // 把已选学科 id 填入 subject_ids
@@ -399,6 +431,7 @@ async function handleSave() {
         class_name: form.class_name || null,
         guardian_name: form.guardian_name || null,
         guardian_phone: form.guardian_phone || null,
+        campus_id: form.campus_id || null,
         enrollment_date: form.enrollment_date || null,
         notes: form.notes || null,
         subject_ids: form.subject_ids,
@@ -475,6 +508,11 @@ function handleSearch() {}
 onMounted(() => {
   loadStudents()
   loadSubjects()
+  loadCampuses()
+  // 从校区管理页跳转带入校区筛选
+  if (route.query.campus) {
+    filterCampusId.value = Number(route.query.campus) || null
+  }
 })
 </script>
 
@@ -556,6 +594,16 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.campus-cell {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 20px;
+  background: var(--primary-lighter);
+  color: var(--primary-dark);
+  font-size: 12px;
+  font-weight: 500;
 }
 .teacher-avatar {
   width: 22px;

@@ -13,27 +13,36 @@ from ..models import Student, User, UserRole
 from ..models_learning import Score, Attendance, Homework, ClassPerformance
 from ..models_income import FeeRecord
 from ..models_subject import StudentSubject, Subject
-from ..security import get_current_user
+from ..security import get_current_user, is_head_role
 
 router = APIRouter()
 
 
 def _filter_teacher(db, query, current_user, student_id_field=None):
-    """教师角色：只允许查询自己负责的学生数据"""
+    """教师角色：只允许查询自己负责的学生；校区负责人：本校区全部学生"""
     if current_user.role == UserRole.TEACHER:
-        if student_id_field is not None:
-            query = query.join(Student).filter(Student.teacher_id == current_user.id)
-        else:
-            query = query.join(Student).filter(Student.teacher_id == current_user.id)
+        query = query.join(Student).filter(Student.teacher_id == current_user.id)
+    elif is_head_role(current_user.role):
+        query = query.join(Student).filter(Student.campus_id == current_user.campus_id)
+    elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
+        query = query.join(Student).filter(Student.campus_id == current_user.campus_id)
     return query
 
 
 def _check_student_teacher(db, student_id, current_user):
-    """教师角色：校验学生是否归自己负责"""
+    """教师角色：校验学生是否归自己负责；校区负责人：校验学生是否在本校区"""
     if current_user.role == UserRole.TEACHER:
         student = db.query(Student).filter(Student.id == student_id).first()
         if not student or student.teacher_id != current_user.id:
             raise HTTPException(status_code=403, detail="只能操作自己负责的学生")
+    elif is_head_role(current_user.role):
+        student = db.query(Student).filter(Student.id == student_id).first()
+        if not student or student.campus_id != current_user.campus_id:
+            raise HTTPException(status_code=403, detail="只能操作本校区学生")
+    elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
+        student = db.query(Student).filter(Student.id == student_id).first()
+        if not student or student.campus_id != current_user.campus_id:
+            raise HTTPException(status_code=403, detail="只能操作本校区学生")
     return
 
 

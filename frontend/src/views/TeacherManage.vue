@@ -13,7 +13,7 @@
         <div class="mini-stat">
           <div class="ms-label">教师总数</div>
           <div class="ms-value">{{ teacherStats.total }}</div>
-          <div class="ms-sub">含校长 {{ teacherStats.principal }} 人</div>
+          <div class="ms-sub">含校长管理号 {{ teacherStats.heads }} 个</div>
         </div>
         <div class="mini-stat">
           <div class="ms-label">启用中</div>
@@ -32,7 +32,17 @@
         </div>
       </div>
 
-      <el-table :data="teachers" stripe>
+      <!-- 校区筛选（校长可按校区查看教师情况） -->
+      <div v-if="userStore.isPrincipal" class="toolbar">
+        <div class="toolbar-left">
+          <el-select v-model="filterCampusId" placeholder="全部校区" clearable style="width: 180px" @change="handleFilterChange">
+            <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+          <span class="result-count">共 <b>{{ filteredTeachers.length }}</b> 名教师</span>
+        </div>
+      </div>
+
+      <el-table :data="filteredTeachers" stripe>
         <el-table-column prop="username" label="账号" width="110" />
         <el-table-column prop="name" label="姓名" width="110">
           <template #default="{ row }">
@@ -42,11 +52,17 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="role" label="角色" width="100">
+        <el-table-column prop="role" label="角色" width="110">
           <template #default="{ row }">
-            <el-tag size="small" round effect="light" :type="row.role === 'principal' ? 'danger' : 'primary'">
-              {{ row.role === 'principal' ? '校长' : '教师' }}
+            <el-tag size="small" round effect="light" :type="roleTagType(row.role)">
+              {{ roleText(row.role) }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="所属校区" width="110">
+          <template #default="{ row }">
+            <span v-if="row.campus_name" class="campus-tag">{{ row.campus_name }}</span>
+            <span v-else class="cell-empty">未分配</span>
           </template>
         </el-table-column>
         <el-table-column label="所属学科" min-width="180">
@@ -83,7 +99,7 @@
         </el-table-column>
         <el-table-column label="操作" width="330">
           <template #default="{ row }">
-            <template v-if="row.role !== 'principal'">
+            <template v-if="row.role !== 'principal' && !(userStore.isSubPrincipal && row.role !== 'teacher')">
               <el-button size="small" link type="primary" @click="openEditDialog(row)">编辑学科</el-button>
               <el-button size="small" link type="warning" @click="openResetPwd(row)">重置密码</el-button>
               <el-button v-if="row.is_active" size="small" link type="warning" @click="handleToggle(row, false)">停用</el-button>
@@ -107,11 +123,10 @@
         <el-form-item label="姓名" prop="name">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="角色">
-          <el-radio-group v-model="form.role">
-            <el-radio value="teacher">教师</el-radio>
-            <el-radio value="principal">校长（管理员）</el-radio>
-          </el-radio-group>
+        <el-form-item label="所属校区" v-if="userStore.isPrincipal">
+          <el-select v-model="form.campus_id" placeholder="选择校区（可选）" clearable style="width: 100%">
+            <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="所属学科">
           <el-select v-model="form.subject_ids" multiple filterable placeholder="可多选（学科/非学科）" style="width: 100%">
@@ -136,17 +151,26 @@
       </template>
     </el-dialog>
 
-    <!-- 编辑学科对话框 -->
-    <el-dialog v-model="editVisible" title="编辑教师所属学科" width="480px">
+    <!-- 编辑教师对话框 -->
+    <el-dialog v-model="editVisible" title="编辑教师信息" width="480px">
       <div style="margin-bottom: 12px">教师：<b>{{ editTarget?.name }}</b></div>
-      <el-select v-model="editSubjectIds" multiple filterable placeholder="可多选（学科/非学科）" style="width: 100%">
-        <el-option-group v-if="subjectGroups.学科.length" label="学科">
-          <el-option v-for="s in subjectGroups.学科" :key="s.id" :label="s.name" :value="s.id" />
-        </el-option-group>
-        <el-option-group v-if="subjectGroups['非学科'].length" label="非学科">
-          <el-option v-for="s in subjectGroups['非学科']" :key="s.id" :label="s.name" :value="s.id" />
-        </el-option-group>
-      </el-select>
+      <el-form label-width="80px">
+        <el-form-item label="所属校区" v-if="userStore.isPrincipal">
+          <el-select v-model="editCampusId" placeholder="选择校区（可选）" clearable style="width: 100%">
+            <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="所属学科">
+          <el-select v-model="editSubjectIds" multiple filterable placeholder="可多选（学科/非学科）" style="width: 100%">
+            <el-option-group v-if="subjectGroups.学科.length" label="学科">
+              <el-option v-for="s in subjectGroups.学科" :key="s.id" :label="s.name" :value="s.id" />
+            </el-option-group>
+            <el-option-group v-if="subjectGroups['非学科'].length" label="非学科">
+              <el-option v-for="s in subjectGroups['非学科']" :key="s.id" :label="s.name" :value="s.id" />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
+      </el-form>
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleEditSave">保存</el-button>
@@ -168,21 +192,39 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import { useUserStore } from '@/stores/user'
 
+const route = useRoute()
+const userStore = useUserStore()
 const teachers = ref([])
 const subjects = ref([])
+const campuses = ref([])
+const filterCampusId = ref(null)
 const dialogVisible = ref(false)
 const editVisible = ref(false)
 const pwdVisible = ref(false)
 const editTarget = ref(null)
 const pwdTarget = ref(null)
 const editSubjectIds = ref([])
+const editCampusId = ref(null)
 const pwdForm = reactive({ password: '' })
 const saving = ref(false)
 const formRef = ref()
+
+function roleText(role) {
+  if (role === 'principal') return '总校长'
+  if (role === 'sub_principal' || role === 'campus_head') return '校长管理号'
+  return '教师'
+}
+function roleTagType(role) {
+  if (role === 'principal') return 'danger'
+  if (role === 'sub_principal' || role === 'campus_head') return 'success'
+  return 'primary'
+}
 
 const subjectGroups = computed(() => {
   const groups = { 学科: [], 非学科: [] }
@@ -192,23 +234,29 @@ const subjectGroups = computed(() => {
   return groups
 })
 
+// 按校区筛选（校长视角；校区负责人后端已限定本校区）
+const filteredTeachers = computed(() => {
+  if (!filterCampusId.value) return teachers.value
+  return teachers.value.filter((t) => t.campus_id === filterCampusId.value)
+})
+
 // ===== 纯展示统计（不参与任何业务逻辑，仅用于顶部指标展示） =====
 const teacherStats = computed(() => {
-  const list = teachers.value
-  const principal = list.filter((t) => t.role === 'principal').length
+  const list = filteredTeachers.value
+  const heads = list.filter((t) => t.role === 'sub_principal' || t.role === 'campus_head').length
   const active = list.filter((t) => t.is_active).length
   const subjectSet = new Set()
   list.forEach((t) => (t.subjects || []).forEach((s) => subjectSet.add(s.name)))
   return {
     total: list.length,
-    principal,
+    heads,
     active,
     inactive: list.length - active,
     subjects: subjectSet.size,
   }
 })
 
-const form = reactive({ username: '', password: '', name: '', role: 'teacher', phone: '', email: '', subject_ids: [] })
+const form = reactive({ username: '', password: '', name: '', role: 'teacher', phone: '', email: '', campus_id: null, subject_ids: [] })
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
@@ -223,8 +271,18 @@ async function loadSubjects() {
   subjects.value = await request.get('/subjects')
 }
 
+async function loadCampuses() {
+  try {
+    campuses.value = await request.get('/campuses/options')
+  } catch (e) {
+    campuses.value = []
+  }
+}
+
+function handleFilterChange() {}
+
 function openDialog() {
-  Object.assign(form, { username: '', password: '', name: '', role: 'teacher', phone: '', email: '', subject_ids: [] })
+  Object.assign(form, { username: '', password: '', name: '', role: 'teacher', phone: '', email: '', campus_id: null, subject_ids: [] })
   dialogVisible.value = true
 }
 
@@ -246,14 +304,18 @@ async function handleSave() {
 function openEditDialog(row) {
   editTarget.value = row
   editSubjectIds.value = (row.subjects || []).map((s) => s.id)
+  editCampusId.value = row.campus_id ?? null
   editVisible.value = true
 }
 
 async function handleEditSave() {
   saving.value = true
   try {
-    await request.put(`/auth/users/${editTarget.value.id}`, { subject_ids: editSubjectIds.value })
-    ElMessage.success('学科已更新')
+    await request.put(`/auth/users/${editTarget.value.id}`, {
+      subject_ids: editSubjectIds.value,
+      campus_id: editCampusId.value,
+    })
+    ElMessage.success('教师信息已更新')
     editVisible.value = false
     loadTeachers()
   } finally {
@@ -303,6 +365,11 @@ async function handleResetPwd() {
 onMounted(() => {
   loadTeachers()
   loadSubjects()
+  loadCampuses()
+  // 从校区管理页跳转带入校区筛选
+  if (route.query.campus) {
+    filterCampusId.value = Number(route.query.campus) || null
+  }
 })
 </script>
 
@@ -383,5 +450,36 @@ onMounted(() => {
 .cell-empty {
   color: var(--text-muted);
   font-size: 12px;
+}
+.campus-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 20px;
+  background: var(--primary-lighter);
+  color: var(--primary-dark);
+  font-size: 12px;
+  font-weight: 500;
+}
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.result-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+.result-count b {
+  color: var(--primary);
+  font-size: 15px;
 }
 </style>

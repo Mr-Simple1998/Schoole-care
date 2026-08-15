@@ -41,7 +41,7 @@
             <el-radio-button value="非学科">非学科</el-radio-button>
           </el-radio-group>
         </div>
-        <el-button type="primary" :icon="Plus" @click="openDialog()">新增学科</el-button>
+        <el-button v-if="userStore.isPrincipal" type="primary" :icon="Plus" @click="openDialog()">新增学科</el-button>
       </div>
 
       <el-table :data="filteredSubjects" stripe>
@@ -74,7 +74,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180">
+        <el-table-column v-if="userStore.isPrincipal" label="操作" width="180">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="openDialog(row)">编辑</el-button>
             <el-button size="small" :type="row.is_active ? 'warning' : 'success'" link @click="toggleActive(row)">
@@ -118,7 +118,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import { useUserStore } from '@/stores/user'
 
+const userStore = useUserStore()
 const filterCat = ref('')
 const subjects = ref([])
 const dialogVisible = ref(false)

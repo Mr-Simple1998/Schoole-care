@@ -10,7 +10,9 @@ export const useUserStore = defineStore('user', {
 	getters: {
 		isLogin: (s) => !!s.token,
 		isPrincipal: (s) => s.user && s.user.role === 'principal',
+		isSubPrincipal: (s) => s.user && (s.user.role === 'sub_principal' || s.user.role === 'campus_head'),
 		isTeacher: (s) => s.user && s.user.role === 'teacher',
+		isCampusHead: (s) => s.user && s.user.role === 'campus_head',
 		isPlatform: (s) => s.user && s.user.role === 'platform',
 		userName: (s) => (s.user && s.user.name) || ''
 	},

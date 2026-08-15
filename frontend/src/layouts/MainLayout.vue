@@ -34,21 +34,25 @@
             <el-icon><Delete /></el-icon>
             <span>已删除学生</span>
           </el-menu-item>
-          <el-menu-item v-if="userStore.isPrincipal" index="/income">
+          <el-menu-item v-if="userStore.isPrincipal || userStore.isSubPrincipal" index="/income">
             <el-icon><Money /></el-icon>
             <span>收费管理</span>
           </el-menu-item>
-          <el-menu-item v-if="userStore.isPrincipal" index="/teachers">
+          <el-menu-item v-if="userStore.isPrincipal || userStore.isSubPrincipal" index="/teachers">
             <el-icon><Avatar /></el-icon>
             <span>教师管理</span>
           </el-menu-item>
-          <el-menu-item v-if="userStore.isPrincipal" index="/subjects">
+          <el-menu-item v-if="userStore.isPrincipal || userStore.isSubPrincipal" index="/subjects">
             <el-icon><Grid /></el-icon>
             <span>学科管理</span>
           </el-menu-item>
           <el-menu-item index="/points">
             <el-icon><Trophy /></el-icon>
             <span>积分奖励</span>
+          </el-menu-item>
+          <el-menu-item v-if="userStore.isPrincipal || userStore.isSubPrincipal" index="/campuses">
+            <el-icon><School /></el-icon>
+            <span>校区管理</span>
           </el-menu-item>
         </template>
       </el-menu>
@@ -137,7 +141,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import ProfileDialog from '@/components/ProfileDialog.vue'
-import { Bell } from '@element-plus/icons-vue'
+import { Bell, School } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 const route = useRoute()
@@ -155,11 +159,13 @@ const avatarUrl = computed(() => userStore.user?.avatar || '')
 const roleTagType = computed(() => {
   if (userStore.isPlatform) return 'danger'
   if (userStore.isPrincipal) return 'warning'
+  if (userStore.isSubPrincipal) return 'success'
   return 'primary'
 })
 const roleText = computed(() => {
   if (userStore.isPlatform) return '平台管理员'
-  if (userStore.isPrincipal) return '校长'
+  if (userStore.isPrincipal) return '总校长'
+  if (userStore.isSubPrincipal) return '校长管理号'
   return '教师'
 })
 

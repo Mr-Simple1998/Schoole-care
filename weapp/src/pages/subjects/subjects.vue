@@ -1,6 +1,6 @@
 <template>
 	<view class="page">
-		<button class="btn-primary add-btn" @click="showAdd=true">新增学科</button>
+		<button class="btn-primary add-btn" v-if="store.isPrincipal" @click="showAdd=true">新增学科</button>
 
 		<!-- 概览小卡（纯展示） -->
 		<view class="stat-grid" v-if="subjects && subjects.length">
@@ -57,7 +57,7 @@
 						<text class="dot" :class="s.is_active ? 'dot-green' : 'dot-red'"></text>
 						<text :class="s.is_active ? 'text-primary' : 'text-danger'">{{ s.is_active ? '启用' : '停用' }}</text>
 					</view>
-					<text class="del" @click="doDelete(s)">删除</text>
+					<text class="del" v-if="store.isPrincipal" @click="doDelete(s)">删除</text>
 				</view>
 			</view>
 		</view>
@@ -87,10 +87,12 @@
 
 <script>
 import { get, post, del } from '../../utils/request';
+import { useUserStore } from '../../stores/user';
 
 export default {
 	data() {
 		return {
+			store: useUserStore(),
 			subjects: [],
 			cats: ['学科', '非学科'],
 			showAdd: false,

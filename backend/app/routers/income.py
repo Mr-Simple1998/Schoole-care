@@ -7,9 +7,35 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Student, User, UserRole
 from ..models_income import FeeRecord, Invoice, RefundAdjustment, Installment, InstallmentRecord
-from ..security import get_current_user, get_current_principal
+from ..security import (
+    get_current_user, get_current_principal_or_head, is_head_role,
+)
 
 router = APIRouter()
+
+
+def _scope_income_students(q, current_user: User):
+    """按角色限定学生数据范围（教师=自己负责；校区负责人=本校区；总校长归属校区后=本校区）"""
+    if current_user.role == UserRole.TEACHER:
+        return q.join(Student).filter(Student.teacher_id == current_user.id)
+    if is_head_role(current_user.role):
+        return q.join(Student).filter(Student.campus_id == current_user.campus_id)
+    if current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
+        return q.join(Student).filter(Student.campus_id == current_user.campus_id)
+    return q
+
+
+def _check_student_scope(db: Session, current_user: User, student: Student):
+    """校验学生是否在当前用户数据范围内"""
+    if current_user.role == UserRole.TEACHER:
+        if student.teacher_id != current_user.id:
+            raise HTTPException(status_code=403, detail="只能操作自己负责的学生")
+    elif is_head_role(current_user.role):
+        if student.campus_id != current_user.campus_id:
+            raise HTTPException(status_code=403, detail="只能操作本校区学生")
+    elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
+        if student.campus_id != current_user.campus_id:
+            raise HTTPException(status_code=403, detail="只能操作本校区学生")
 
 # 缴费时间段 -> 有效天数
 PERIOD_DAYS = {
@@ -56,6 +82,7 @@ def create_fee(data: FeeCreate, current_user: User = Depends(get_current_user), 
     student = db.query(Student).filter(Student.id == data.student_id).first()
     if not student:
         raise HTTPException(status_code=404, detail="学生不存在")
+    _check_student_scope(db, current_user, student)
     payload = data.model_dump()
     period = data.payment_period
     if period and period in PERIOD_DAYS:
@@ -95,8 +122,7 @@ def _fee_with_name(fee, student=None):
 @router.get("/fees", response_model=list[FeeOut])
 def list_fees(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(FeeRecord).filter(FeeRecord.org_id == current_user.org_id)
-    if current_user.role == UserRole.TEACHER:
-        q = q.join(Student).filter(Student.teacher_id == current_user.id)
+    q = _scope_income_students(q, current_user)
     fees = q.order_by(FeeRecord.pay_date.desc()).all()
     result = []
     for f in fees:
@@ -118,6 +144,7 @@ def get_student_sessions(student_id: int, current_user: User = Depends(get_curre
     student = db.query(Student).filter(Student.id == student_id).first()
     if not student:
         raise HTTPException(status_code=404, detail="学生不存在")
+    _check_student_scope(db, current_user, student)
     # FeeRecord 级别（旧）
     fees = db.query(FeeRecord).filter(
         FeeRecord.student_id == student_id,
@@ -160,6 +187,10 @@ def get_student_sessions(student_id: int, current_user: User = Depends(get_curre
 @router.post("/students/{student_id}/deduct-session")
 def deduct_session(student_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """手动核销一次课程"""
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="学生不存在")
+    _check_student_scope(db, current_user, student)
     fee = db.query(FeeRecord).filter(
         FeeRecord.student_id == student_id,
         FeeRecord.org_id == current_user.org_id,
@@ -196,8 +227,12 @@ class InvoiceOut(BaseModel):
         from_attributes = True
 
 
-@router.post("/invoices", response_model=InvoiceOut, dependencies=[Depends(get_current_principal)])
+@router.post("/invoices", response_model=InvoiceOut, dependencies=[Depends(get_current_principal_or_head)])
 def create_invoice(data: InvoiceCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    student = db.query(Student).filter(Student.id == data.student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="学生不存在")
+    _check_student_scope(db, current_user, student)
     inv = Invoice(**data.model_dump(), org_id=current_user.org_id, created_at=datetime.utcnow())
     db.add(inv)
     db.commit()
@@ -208,8 +243,7 @@ def create_invoice(data: InvoiceCreate, current_user: User = Depends(get_current
 @router.get("/invoices", response_model=list[InvoiceOut])
 def list_invoices(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(Invoice).filter(Invoice.org_id == current_user.org_id)
-    if current_user.role == UserRole.TEACHER:
-        q = q.join(Student).filter(Student.teacher_id == current_user.id)
+    q = _scope_income_students(q, current_user)
     invoices = q.order_by(Invoice.created_at.desc()).all()
     result = []
     for inv in invoices:
@@ -225,8 +259,7 @@ def list_invoices(current_user: User = Depends(get_current_user), db: Session = 
 def list_overdue(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """欠费/未缴提醒：返回待缴账单及学生信息"""
     q = db.query(Invoice).filter(Invoice.status.in_(["待缴", "部分缴纳"]), Invoice.org_id == current_user.org_id)
-    if current_user.role == UserRole.TEACHER:
-        q = q.join(Student).filter(Student.teacher_id == current_user.id)
+    q = _scope_income_students(q, current_user)
     invoices = q.all()
     result = []
     for inv in invoices:
@@ -270,8 +303,12 @@ class RefundOut(BaseModel):
         from_attributes = True
 
 
-@router.post("/refunds", response_model=RefundOut, dependencies=[Depends(get_current_principal)])
+@router.post("/refunds", response_model=RefundOut, dependencies=[Depends(get_current_principal_or_head)])
 def create_refund(data: RefundCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    student = db.query(Student).filter(Student.id == data.student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="学生不存在")
+    _check_student_scope(db, current_user, student)
     refund = RefundAdjustment(**data.model_dump(), org_id=current_user.org_id, created_by=current_user.id, created_at=datetime.utcnow())
     db.add(refund)
     # 若关联账单，更新减免后状态
@@ -289,8 +326,7 @@ def create_refund(data: RefundCreate, current_user: User = Depends(get_current_u
 @router.get("/refunds", response_model=list[RefundOut])
 def list_refunds(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(RefundAdjustment).filter(RefundAdjustment.org_id == current_user.org_id)
-    if current_user.role == UserRole.TEACHER:
-        q = q.join(Student).filter(Student.teacher_id == current_user.id)
+    q = _scope_income_students(q, current_user)
     result = []
     for r in q.order_by(RefundAdjustment.created_at.desc()).all():
         item = RefundOut.model_validate(r)
@@ -328,12 +364,13 @@ class InstallmentOut(BaseModel):
         from_attributes = True
 
 
-@router.post("/installments", response_model=InstallmentOut, dependencies=[Depends(get_current_principal)])
+@router.post("/installments", response_model=InstallmentOut, dependencies=[Depends(get_current_principal_or_head)])
 def create_installment(data: InstallmentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """校长：为学费创建分期计划"""
+    """总校长/校区负责人：为学费创建分期计划"""
     student = db.query(Student).filter(Student.id == data.student_id).first()
     if not student:
         raise HTTPException(status_code=404, detail="学生不存在")
+    _check_student_scope(db, current_user, student)
     if data.periods < 1:
         raise HTTPException(status_code=400, detail="期数至少为1")
     inst = Installment(
@@ -358,8 +395,7 @@ def create_installment(data: InstallmentCreate, current_user: User = Depends(get
 @router.get("/installments", response_model=list[InstallmentOut])
 def list_installments(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(Installment).filter(Installment.org_id == current_user.org_id)
-    if current_user.role == UserRole.TEACHER:
-        q = q.join(Student).filter(Student.teacher_id == current_user.id)
+    q = _scope_income_students(q, current_user)
     insts = q.order_by(Installment.created_at.desc()).all()
     result = []
     for i in insts:
@@ -382,6 +418,8 @@ def get_installment_detail(installment_id: int, current_user: User = Depends(get
     if not inst:
         raise HTTPException(status_code=404, detail="分期不存在")
     st = db.query(Student).filter(Student.id == inst.student_id).first()
+    if st:
+        _check_student_scope(db, current_user, st)
     records = db.query(InstallmentRecord).filter(
         InstallmentRecord.installment_id == installment_id,
         InstallmentRecord.org_id == current_user.org_id,
@@ -411,6 +449,9 @@ def pay_installment(installment_id: int, current_user: User = Depends(get_curren
     inst = db.query(Installment).filter(Installment.id == installment_id, Installment.org_id == current_user.org_id).first()
     if not inst:
         raise HTTPException(status_code=404, detail="分期不存在")
+    st = db.query(Student).filter(Student.id == inst.student_id).first()
+    if st:
+        _check_student_scope(db, current_user, st)
     if inst.status == "已完成":
         raise HTTPException(status_code=400, detail="分期已完成")
     next_record = db.query(InstallmentRecord).filter(
