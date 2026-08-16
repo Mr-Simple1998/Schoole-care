@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
@@ -124,3 +125,19 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+
+# ---------- 生产环境：托管 PC 前端构建产物（同一端口提供 /api + 静态页面） ----------
+# 配置环境变量 FRONTEND_DIST=<前端 dist 目录> 后生效：/assets 静态资源 + 其余路径兜底返回
+# index.html（支持 Vue Router history 模式；/api、/static、/docs 等已有路由优先匹配）
+if settings.frontend_dist:
+    _fe_dir = Path(settings.frontend_dist).resolve()
+    if (_fe_dir / "index.html").exists():
+        _fe_assets = _fe_dir / "assets"
+        if _fe_assets.is_dir():
+            app.mount("/assets", StaticFiles(directory=_fe_assets), name="assets")
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        def _spa_fallback(full_path: str):
+            """前端 history 路由兜底：非 API 路径一律返回 index.html"""
+            return FileResponse(_fe_dir / "index.html")

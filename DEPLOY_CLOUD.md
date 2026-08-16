@@ -63,6 +63,29 @@
 
 - `frontend/src/utils/request.js` 的 BASE_URL 同样改为云托管域名（可选，PC 端也可继续用本地后端）。
 
+## 四、完整系统镜像（PC 前端 + 后端，根目录 Dockerfile）
+
+仓库根目录的 `Dockerfile` 提供**一体化镜像**：多阶段构建 PC 前端（Vue3+Vite），再与 FastAPI 后端打进同一容器，由后端同端口托管（`/api/*` 接口 + `/assets` 静态资源 + history 路由兜底返回 `index.html`）。
+
+```powershell
+# 构建
+docker build -t tuoguan-system .
+
+# 运行（SQLite 数据挂载到 /data 持久化；端口映射 8000）
+docker run -d --name tuoguan `
+  -p 8000:8000 `
+  -v tuoguan-data:/data `
+  -e DATABASE_URL=sqlite:////data/tortoise.db `
+  -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD=admin123 `
+  tuoguan-system
+```
+
+- 启动时自动执行幂等的 `python -m app.seed_admin`（不存在才创建 admin / 默认学科）。
+- 访问 `http://localhost:8000` 即 PC 管理端；接口文档 `http://localhost:8000/docs`。
+- 可选环境变量：`PORT`（默认 8000）、`WX_APPID`/`WX_SECRET`（真实小程序登录）、`DEBUG`（默认 false）。
+- 微信小程序（weapp/）产物需用微信开发者工具上传，不包含在本镜像内；将 `weapp/src/utils/request.js` 的 BASE_URL 指向本服务域名即可对接。
+- 后端单独的云托管镜像见 `backend/Dockerfile`（微信云托管「从代码仓库构建」时识别）。
+
 ## 注意事项
 
 - 云托管是**按量付费**服务（0 实例时不计费，有请求才拉起），个人小程序也可用。

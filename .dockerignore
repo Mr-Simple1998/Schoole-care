@@ -1,0 +1,25 @@
+# Git / 本地环境
+.git
+.gitignore
+.ssh
+.tmp
+.npm-cache
+.pipwork-*
+*.log
+
+# 依赖与虚拟环境
+node_modules
+**/node_modules
+.venv
+**/__pycache__
+*.pyc
+*.pyo
+
+# 数据与环境配置（不入镜像）
+*.db
+.env
+backend/static/uploads/*
+
+# 构建产物（前端在镜像内重新构建）
+frontend/dist
+weapp/dist

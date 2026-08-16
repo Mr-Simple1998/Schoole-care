@@ -68,6 +68,8 @@ C:\Users\DZY\Desktop\后台管理系统\
 │     └─ utils\request.js   # BASE_URL 默认 http://127.0.0.1:8000
 ├─ .ssh\                    # 本地 SSH 密钥（已被 .git/info/exclude 排除，不入库）
 ├─ .tmp\UI_GUIDE.md         # 三端 UI 设计规范（也已被排除，不入库）
+├─ Dockerfile               # 完整系统镜像（PC 前端 + 后端同容器，多阶段构建）
+├─ .dockerignore
 ├─ start.bat                # 一键启动脚本
 └─ project.md / README.md / .gitignore
 ```
@@ -179,6 +181,11 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 
 ## 8. 近期改动记录
 
+- **2026-08-16 · 完整系统 Dockerfile（PC 前端 + 后端一体化镜像）**：
+  - 根目录新增 `Dockerfile`（多阶段：node:22-alpine 构建前端 → python:3.14-slim 运行后端）与 `.dockerignore`；
+  - 后端新增 `FRONTEND_DIST` 配置：设置后由 FastAPI 同端口托管 PC 前端构建产物（`/assets` 静态资源 + 其余路径兜底返回 `index.html`，支持 history 路由；`/api`、`/static`、`/docs` 优先匹配）；
+  - 镜像默认 `DATABASE_URL=sqlite:////data/tortoise.db`（挂载卷持久化），启动时幂等执行 `seed_admin` 初始化管理员与默认学科；健康检查 `/health`；
+  - 部署说明见 `DEPLOY_CLOUD.md` §四；微信云托管仍使用 `backend/Dockerfile`。
 - **2026-08-16 · 教师上下班打卡 + 全体学生考勤日历 + 学生打卡权限分离**：
   - **教师上下班打卡**：新增 `TeacherAttendance` 表与 `users.work_start_time/work_end_time` 字段（启动 `_ensure_schema` 自动建表/加列，`migrate.py` 同步）；教师在 PC/小程序工作台进行上班/下班打卡（`POST /learning/teacher-attendance`）；校区负责人在教师管理页设置上下班时间（PC「上下班」按钮 / 小程序教师列表「上下班」入口，`PUT /auth/users/{id}/work-time`）；月度考勤汇总（`GET /dashboard/attendance-summary`）按排班工作日计算，未打卡标记「缺勤」、晚于上班标记「迟到」、早于下班标记「早退」，校区负责人查看本校区教师汇总、教师查看自己汇总、总校长不展示。
   - **全体学生考勤日历**：后端 `GET /dashboard/attendance-summary?month=YYYY-MM` 返回学生×日期考勤明细；PC 工作台新增「本月学生考勤（日历）」卡片（`给学生打卡` 对话框 + `进入日历`）+ 独立页 `/student-attendance`；小程序工作台新增「📅 查看日历」入口 + 注册 `pages/student/attendance` 全体学生考勤日历页（每行一名学生、每列一天、彩色圆点标记 正常/迟到/缺勤/请假/早退/未记录），学生列表「考勤」按钮也可进入。
