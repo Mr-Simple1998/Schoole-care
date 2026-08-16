@@ -92,18 +92,26 @@
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <span class="status-dot" :class="row.is_active ? 'is-success' : 'is-danger'">
+            <span v-if="row.resigned" class="status-dot is-danger">已离职</span>
+            <span v-else class="status-dot" :class="row.is_active ? 'is-success' : 'is-danger'">
               {{ row.is_active ? '启用' : '停用' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="330">
+        <el-table-column label="操作" width="380">
           <template #default="{ row }">
             <template v-if="row.role !== 'principal' && !(userStore.isSubPrincipal && row.role !== 'teacher')">
               <el-button size="small" link type="primary" @click="openEditDialog(row)">编辑学科</el-button>
               <el-button size="small" link type="warning" @click="openResetPwd(row)">重置密码</el-button>
               <el-button v-if="row.is_active" size="small" link type="warning" @click="handleToggle(row, false)">停用</el-button>
               <el-button v-else size="small" link type="success" @click="handleToggle(row, true)">重新启用</el-button>
+              <el-button
+                v-if="row.role === 'teacher' && row.is_active"
+                size="small"
+                link
+                type="danger"
+                @click="handleResign(row)"
+              >离职</el-button>
               <el-button size="small" link type="danger" @click="handleDelete(row)">删除</el-button>
             </template>
           </template>
@@ -327,8 +335,24 @@ async function handleToggle(row, active) {
   const verb = active ? '重新启用' : '停用'
   await ElMessageBox.confirm(`确定${verb}账号「${row.name}」吗？`, '提示', { type: 'warning' })
   await request.put(`/auth/users/${row.id}`, { is_active: active })
-  ElMessage.success(`已${verb}`)
+  ElMessage.success(active && row.resigned ? '已重新启用（离职标记已清除）' : `已${verb}`)
   loadTeachers()
+}
+
+async function handleResign(row) {
+  await ElMessageBox.confirm(
+    `确定办理「${row.name}」的离职吗？\n离职后其账号将停用，名下所有学生数据保留，并暂存至所在校区负责人处；之后可分配给其他教师或新账号。`,
+    '教师离职',
+    { type: 'warning', confirmButtonText: '办理离职', confirmButtonClass: 'el-button--danger' },
+  )
+  try {
+    const res = await request.post(`/auth/users/${row.id}/resign`)
+    const n = res.students_transferred || 0
+    ElMessage.success(`离职办理完成：${n} 名学生已暂存至校区负责人处，可再分配`)
+    loadTeachers()
+  } catch (e) {
+    // 全局拦截器已提示错误
+  }
 }
 
 async function handleDelete(row) {

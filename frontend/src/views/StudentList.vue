@@ -40,11 +40,16 @@
             <el-option label="未分校区" :value="0" />
           </el-select>
           <span class="result-count">共 <b>{{ filteredStudents.length }}</b> 名学生</span>
+          <el-checkbox v-if="canAssign" v-model="onlyUnassigned" @change="handleSearch">只看暂存学生</el-checkbox>
         </div>
-        <el-button type="primary" :icon="Plus" class="btn-add" @click="openDialog()">新增学生</el-button>
+        <div class="toolbar-right">
+          <el-button v-if="canAssign" type="warning" :disabled="!selectedRows.length" @click="openAssignDialog">分配教师</el-button>
+          <el-button type="primary" :icon="Plus" class="btn-add" @click="openDialog()">新增学生</el-button>
+        </div>
       </div>
 
-      <el-table :data="filteredStudents" stripe>
+      <el-table :data="filteredStudents" stripe @selection-change="onSelectionChange">
+        <el-table-column v-if="canAssign" type="selection" width="45" />
         <el-table-column prop="student_no" label="学号" width="110" />
         <el-table-column prop="name" label="姓名" width="110" />
         <el-table-column prop="gender" label="性别" width="70" />
@@ -87,12 +92,12 @@
         </el-table-column>
         <el-table-column prop="guardian_name" label="监护人" width="100" />
         <el-table-column prop="guardian_phone" label="联系电话" width="130" />
-        <el-table-column label="负责教师" width="110">
+        <el-table-column label="负责教师" width="130">
           <template #default="{ row }">
             <span v-if="row.teacher_name" class="teacher-cell">
               <span class="teacher-avatar">{{ row.teacher_name[0] }}</span>{{ row.teacher_name }}
             </span>
-            <span v-else class="empty-inline">未分配</span>
+            <el-tag v-else size="small" type="warning" effect="plain">暂存校区</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="90">
@@ -158,8 +163,18 @@
           </el-select>
         </el-form-item>
         <el-form-item label="所属校区">
-          <el-select v-model="form.campus_id" placeholder="选择校区（可选）" clearable style="width: 100%">
+          <el-select v-model="form.campus_id" placeholder="选择校区（可选）" clearable style="width: 100%" @change="onCampusChange">
             <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="canAssign" label="负责教师">
+          <el-select v-model="form.teacher_id" placeholder="选择教师（可留空=暂存至校区负责人）" clearable filterable style="width: 100%">
+            <el-option
+              v-for="t in teacherOptions"
+              :key="t.id"
+              :label="`${t.name}（${t.username}）${t.role === 'sub_principal' || t.role === 'campus_head' ? '· 校区负责人' : ''}`"
+              :value="t.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="所属学科">
@@ -221,6 +236,27 @@
       </template>
     </el-dialog>
 
+    <!-- 批量分配教师对话框（离职交接：把暂存学生分配给其他教师/新账号） -->
+    <el-dialog v-model="assignVisible" :title="`分配教师（已选 ${selectedRows.length} 名学生）`" width="480px">
+      <el-form label-width="90px">
+        <el-form-item label="负责教师">
+          <el-select v-model="assignTeacherId" placeholder="选择教师（留空=暂存至校区负责人）" clearable filterable style="width: 100%">
+            <el-option
+              v-for="t in assignTeacherOptions"
+              :key="t.id"
+              :label="`${t.name}（${t.username}）${t.campus_name ? ' · ' + t.campus_name : ''}`"
+              :value="t.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <div class="assign-tip">学生数据（档案、课时、收费、积分等）全部保留，仅变更负责教师。所选学生须与目标教师同校区。</div>
+      <template #footer>
+        <el-button @click="assignVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="handleAssign">确认分配</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 打卡对话框 -->
     <el-dialog v-model="attVisible" title="考勤打卡" width="480px">
       <el-form :model="attForm" label-width="80px">
@@ -266,9 +302,15 @@ const userStore = useUserStore()
 const keyword = ref('')
 const filterSubjectId = ref(null)
 const filterCampusId = ref(null)
+const onlyUnassigned = ref(false)
 const students = ref([])
 const subjects = ref([])
 const campuses = ref([])
+const teacherOptions = ref([])
+const selectedRows = ref([])
+const assignVisible = ref(false)
+const assignTeacherId = ref(null)
+const assignTeacherOptions = ref([])
 const dialogVisible = ref(false)
 const saving = ref(false)
 const formRef = ref()
@@ -276,6 +318,9 @@ const attVisible = ref(false)
 const attSaving = ref(false)
 const attStudent = ref(null)
 const attForm = reactive({ subject_id: null, status: '正常', remark: '' })
+
+// 总校长/校区负责人可分配负责教师
+const canAssign = computed(() => userStore.isPrincipal || userStore.isSubPrincipal)
 
 // 学科按分类分组
 const subjectGroups = computed(() => {
@@ -290,6 +335,7 @@ const emptyForm = () => ({
   id: null, name: '', gender: '男', school: '', grade: '',
   guardian_name: '', guardian_phone: '', enrollment_date: '', notes: '',
   campus_id: null,
+  teacher_id: null,
   subject_ids: [],
   sessionMap: {},  // { subject_id: total_sessions }
   expireMap: {},   // { subject_id: expire_date }
@@ -310,7 +356,8 @@ const filteredStudents = computed(() => {
     const matchC =
       filterCampusId.value == null ||
       (filterCampusId.value === 0 ? !s.campus_id : s.campus_id === filterCampusId.value)
-    return matchK && matchS && matchC
+    const matchU = !onlyUnassigned.value || !s.teacher_id
+    return matchK && matchS && matchC && matchU
   })
 })
 
@@ -388,10 +435,58 @@ async function loadCampuses() {
   }
 }
 
+// 教师下拉（按校区过滤；校区负责人后端自动限定其管辖校区）
+async function loadTeacherOptions(campusId) {
+  try {
+    const params = campusId ? { campus_id: campusId } : {}
+    const list = await request.get('/auth/teachers', { params })
+    teacherOptions.value = list.filter((t) => t.is_active && !t.resigned)
+  } catch (e) {
+    teacherOptions.value = []
+  }
+}
+
+function onCampusChange() {
+  loadTeacherOptions(form.campus_id)
+}
+
+function onSelectionChange(rows) {
+  selectedRows.value = rows
+}
+
+async function openAssignDialog() {
+  assignTeacherId.value = null
+  try {
+    const list = await request.get('/auth/teachers')
+    assignTeacherOptions.value = list.filter((t) => t.is_active && !t.resigned)
+  } catch (e) {
+    assignTeacherOptions.value = []
+  }
+  assignVisible.value = true
+}
+
+async function handleAssign() {
+  saving.value = true
+  try {
+    const res = await request.post('/students/assign', {
+      student_ids: selectedRows.value.map((s) => s.id),
+      teacher_id: assignTeacherId.value ?? null,
+    })
+    ElMessage.success(res.detail + (res.teacher_name ? `：${res.teacher_name}` : ''))
+    assignVisible.value = false
+    selectedRows.value = []
+    loadStudents()
+  } finally {
+    saving.value = false
+  }
+}
+
 function openDialog(row) {
   Object.assign(form, emptyForm(), row || {})
   // 把已选学科 id 填入 subject_ids
   form.subject_ids = (row?.subjects || []).map((s) => s.id)
+  form.teacher_id = row?.teacher_id ?? null
+  loadTeacherOptions(form.campus_id)
   // 把已有课时配置填入 sessionMap
   form.sessionMap = {}
   form.expireMap = {}
@@ -432,6 +527,7 @@ async function handleSave() {
         guardian_name: form.guardian_name || null,
         guardian_phone: form.guardian_phone || null,
         campus_id: form.campus_id || null,
+        teacher_id: form.teacher_id ?? null,
         enrollment_date: form.enrollment_date || null,
         notes: form.notes || null,
         subject_ids: form.subject_ids,
@@ -509,6 +605,7 @@ onMounted(() => {
   loadStudents()
   loadSubjects()
   loadCampuses()
+  if (canAssign.value) loadTeacherOptions(null)
   // 从校区管理页跳转带入校区筛选
   if (route.query.campus) {
     filterCampusId.value = Number(route.query.campus) || null
@@ -528,6 +625,19 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.assign-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 8px 12px;
+  line-height: 1.5;
 }
 :deep(.el-input__wrapper) {
   border-radius: 8px;

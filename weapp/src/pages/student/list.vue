@@ -61,7 +61,8 @@
 							<view class="ir-sub">
 								<text>{{ s.school || '未填写' }}</text>
 								<text v-if="s.grade">{{ s.grade }}</text>
-								<text>教师：{{ s.teacher_name || '未分配' }}</text>
+								<text v-if="s.teacher_name">教师：{{ s.teacher_name }}</text>
+								<text v-else class="stash">暂存校区负责人</text>
 							</view>
 						</view>
 						<view class="ir-right">
@@ -236,6 +237,7 @@ export default {
 	border-bottom: none;
 }
 .s-no { font-size: 22rpx; color: #909399; margin-left: 10rpx; font-weight: 400; }
+.stash { color: #e6a23c; }
 .s-subjects { margin-top: 16rpx; display: flex; align-items: center; flex-wrap: wrap; }
 .sub-label { font-size: 22rpx; color: #909399; margin-right: 10rpx; }
 .sub-tag {

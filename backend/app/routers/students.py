@@ -8,21 +8,22 @@ from ..database import get_db
 from ..models import Student, User, UserRole
 from ..models_points import PointRecord
 from ..models_subject import Subject, StudentSubject
-from ..security import get_current_user, is_head_role
+from ..security import get_current_user, is_head_role, managed_campus_ids
 
 router = APIRouter()
 
 
-def _scope_student_query(q, current_user: User):
+def _scope_student_query(q, db: Session, current_user: User):
     """按角色限定学生数据范围：
     - 教师：只看自己负责的学生
-    - 校区负责人（sub_principal / campus_head）：只看本校区全部学生
+    - 校区负责人（sub_principal / campus_head）：只看自己管辖校区（可多校区）的全部学生
     - 总校长（principal）：归属校区后只看本校区；未归属校区（存量）看全机构
     """
     if current_user.role == UserRole.TEACHER:
         return q.filter(Student.teacher_id == current_user.id)
     if is_head_role(current_user.role):
-        return q.filter(Student.campus_id == current_user.campus_id)
+        managed = managed_campus_ids(db, current_user) or set()
+        return q.filter(Student.campus_id.in_(managed))
     if current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
         return q.filter(Student.campus_id == current_user.campus_id)
     return q
@@ -34,11 +35,34 @@ def _check_student_scope(db: Session, current_user: User, student: Student):
         if student.teacher_id != current_user.id:
             raise HTTPException(status_code=403, detail="只能操作自己负责的学生")
     elif is_head_role(current_user.role):
-        if student.campus_id != current_user.campus_id:
+        managed = managed_campus_ids(db, current_user) or set()
+        if student.campus_id not in managed:
             raise HTTPException(status_code=403, detail="只能操作本校区学生")
     elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
         if student.campus_id != current_user.campus_id:
             raise HTTPException(status_code=403, detail="只能操作本校区学生")
+
+
+def _validate_teacher(db: Session, current_user: User, teacher_id: int | None, student_campus_id: int | None):
+    """校验负责教师：必须为本机构教师（含负责人），且与学生同校区（学生未分校区则不限）"""
+    if teacher_id is None:
+        return
+    t = db.query(User).filter(User.id == teacher_id, User.org_id == current_user.org_id).first()
+    if not t or t.role not in (UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD, UserRole.PRINCIPAL):
+        raise HTTPException(status_code=400, detail="负责教师不存在或角色不合法")
+    if t.resigned:
+        raise HTTPException(status_code=400, detail=f"教师「{t.name}」已离职，请选择在职教师")
+    if student_campus_id is not None and t.campus_id != student_campus_id:
+        raise HTTPException(status_code=400, detail="负责教师必须与学生同校区")
+
+
+def _adopt_teacher_campus(db: Session, current_user: User, teacher_id: int | None, student_campus_id: int | None):
+    """无校区归属的教师被指定为某校区学生的负责教师时，自动归属到该校区（新号接管学生场景）"""
+    if teacher_id is None or student_campus_id is None:
+        return
+    t = db.query(User).filter(User.id == teacher_id, User.org_id == current_user.org_id).first()
+    if t and t.campus_id is None and t.role in (UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD):
+        t.campus_id = student_campus_id
 
 
 class SubjectSessionIn(BaseModel):
@@ -212,7 +236,7 @@ def list_students(
     """教师仅见自己负责的学生；校区负责人见本校区全部学生；总校长归属校区后见本校区，未归属见全部。
     可按 subject_id / campus_id 筛选（campus_id=0 表示未分校区）"""
     q = db.query(Student).filter(Student.org_id == current_user.org_id, Student.deleted == False)  # noqa: E712
-    q = _scope_student_query(q, current_user)
+    q = _scope_student_query(q, db, current_user)
     # 仅未归属校区的总校长可跨校区筛选；其余角色数据范围已由 _scope_student_query 限定
     scoped = current_user.role == UserRole.TEACHER or is_head_role(current_user.role) or (
         current_user.role == UserRole.PRINCIPAL and current_user.campus_id
@@ -263,12 +287,14 @@ def create_student(data: StudentCreate, current_user: User = Depends(get_current
     elif is_head_role(current_user.role):
         payload["campus_id"] = current_user.campus_id
         if payload.get("teacher_id") is not None:
-            # 校区负责人只能指定本校区教师
-            t = db.query(User).filter(User.id == payload["teacher_id"], User.org_id == current_user.org_id).first()
-            if not t or t.campus_id != current_user.campus_id:
-                raise HTTPException(status_code=400, detail="只能指定本校区教师")
+            # 校区负责人只能指定其管辖校区内的教师；无校区新教师自动归属
+            _adopt_teacher_campus(db, current_user, payload["teacher_id"], payload.get("campus_id"))
+            _validate_teacher(db, current_user, payload["teacher_id"], payload.get("campus_id"))
     elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
         payload["campus_id"] = current_user.campus_id
+    if current_user.role == UserRole.PRINCIPAL and payload.get("teacher_id") is not None:
+        _adopt_teacher_campus(db, current_user, payload["teacher_id"], payload.get("campus_id"))
+        _validate_teacher(db, current_user, payload["teacher_id"], payload.get("campus_id"))
     student = Student(**payload, student_no=_next_student_no(db), status="在读", org_id=current_user.org_id)
     db.add(student)
     db.flush()  # 获取 student.id 以创建关联
@@ -284,13 +310,60 @@ def update_student(student_id: int, data: StudentUpdate, current_user: User = De
     if not student:
         raise HTTPException(status_code=404, detail="学生不存在")
     _check_student_scope(db, current_user, student)
-    for k, v in data.model_dump(exclude_unset=True, exclude={"subject_ids", "subject_sessions"}).items():
+    payload = data.model_dump(exclude_unset=True, exclude={"subject_ids", "subject_sessions"})
+    # 变更负责教师时校验目标教师（支持置空=暂存至校区负责人处；无校区的新教师自动归属学生校区）
+    if "teacher_id" in payload:
+        new_campus = payload.get("campus_id", student.campus_id)
+        _adopt_teacher_campus(db, current_user, payload["teacher_id"], new_campus)
+        _validate_teacher(db, current_user, payload["teacher_id"], new_campus)
+    for k, v in payload.items():
         setattr(student, k, v)
     if "subject_ids" in data.model_dump(exclude_unset=True):
         _set_subjects(db, student, data.subject_ids, data.subject_sessions)
     db.commit()
     db.refresh(student)
     return _student_out(student)
+
+
+# ---------- 批量分配负责教师（离职交接：把暂存至校区的学生分配给其他教师/新账号） ----------
+class AssignTeacher(BaseModel):
+    student_ids: list[int]
+    teacher_id: int | None = None  # None = 暂存至校区负责人处
+
+
+@router.post("/assign")
+def assign_students_teacher(data: AssignTeacher, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """总校长/校区负责人：批量把学生分配给某位教师（或置空暂存至校区）。
+    用于教师离职后学生交接：学生数据全部保留，仅变更负责教师。"""
+    if current_user.role == UserRole.TEACHER:
+        raise HTTPException(status_code=403, detail="仅总校长或校区负责人可分配学生")
+    if not data.student_ids:
+        raise HTTPException(status_code=400, detail="请选择学生")
+    students = db.query(Student).filter(
+        Student.id.in_(data.student_ids),
+        Student.org_id == current_user.org_id,
+        Student.deleted == False,  # noqa: E712
+    ).all()
+    if len(students) != len(set(data.student_ids)):
+        raise HTTPException(status_code=400, detail="存在无效学生")
+    for s in students:
+        _check_student_scope(db, current_user, s)
+    # 目标教师须与学生同校区；一次分配需保证全部学生同校区（跨校区分批分配）
+    campus_ids = {s.campus_id for s in students}
+    if data.teacher_id is not None:
+        if len(campus_ids) > 1:
+            raise HTTPException(status_code=400, detail="所选学生跨校区，请按校区分批分配")
+        _adopt_teacher_campus(db, current_user, data.teacher_id, students[0].campus_id)
+        _validate_teacher(db, current_user, data.teacher_id, students[0].campus_id)
+    for s in students:
+        s.teacher_id = data.teacher_id
+    db.commit()
+    t = db.query(User).filter(User.id == data.teacher_id).first() if data.teacher_id else None
+    return {
+        "detail": "分配完成" if data.teacher_id else "已暂存至校区负责人处",
+        "count": len(students),
+        "teacher_name": t.name if t else None,
+    }
 
 
 @router.delete("/{student_id}")

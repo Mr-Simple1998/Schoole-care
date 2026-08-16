@@ -46,7 +46,19 @@
             <el-tag v-if="c.status === false" size="small" type="info" effect="plain">已停用</el-tag>
           </div>
           <div class="cc-head-right">
-            <el-tag v-if="c.head" size="small" type="success" effect="light">负责人：{{ c.head.name }}</el-tag>
+            <template v-if="c.heads && c.heads.length">
+              <el-tag
+                v-for="h in c.heads"
+                :key="h.id"
+                size="small"
+                :type="h.role === 'principal' ? 'danger' : 'success'"
+                effect="light"
+                class="head-tag"
+              >
+                {{ h.name }}{{ h.role === 'principal' ? '·总校长' : '' }}
+              </el-tag>
+              <el-tag v-if="c.heads.length > 2" size="small" type="info" effect="plain">+{{ c.heads.length - 2 }}</el-tag>
+            </template>
             <el-tag v-else-if="canManage" size="small" type="info" effect="plain">未设负责人</el-tag>
           </div>
         </div>
@@ -196,30 +208,39 @@
       </template>
     </el-dialog>
 
-    <!-- 负责人设置对话框 -->
-    <el-dialog v-model="headVisible" :title="`设置「${headCampus?.name || ''}」负责人（校长管理号）`" width="500px">
+    <!-- 负责人设置对话框（可多选，含总校长；支持离职办理） -->
+    <el-dialog v-model="headVisible" :title="`设置「${headCampus?.name || ''}」负责人（可多选）`" width="580px">
       <el-form label-width="90px">
         <el-form-item label="当前负责人">
-          <template v-if="headCampus?.head">
-            <span class="head-current">{{ headCampus.head.name }}（{{ headCampus.head.username }}）</span>
-            <el-button size="small" link type="danger" @click="headUserId = null; headMode = 'select'">取消负责人</el-button>
+          <template v-if="headCampus?.heads?.length">
+            <div class="head-list">
+              <div v-for="h in headCampus.heads" :key="h.id" class="head-item">
+                <span class="head-name">
+                  {{ h.name }}（{{ h.username }}）
+                  <el-tag v-if="h.role === 'principal'" size="small" type="danger" effect="plain">总校长</el-tag>
+                </span>
+                <el-button size="small" link type="danger" @click="handleResignHead(h)">办理离职</el-button>
+              </div>
+            </div>
           </template>
           <span v-else class="empty-inline">未设置</span>
         </el-form-item>
-        <el-form-item label="设置方式">
-          <el-radio-group v-model="headMode">
-            <el-radio value="select">从现有教师选择</el-radio>
-            <el-radio value="create">手动新建账号</el-radio>
-          </el-radio-group>
+        <el-form-item label="选择负责人">
+          <el-select v-model="headUserIds" multiple filterable collapse-tags collapse-tags-tooltip placeholder="可多选：总校长 / 教师 / 其他校区负责人" style="width: 100%">
+            <el-option
+              v-for="t in headCandidates"
+              :key="t.id"
+              :label="`${t.name}（${t.username}）${t.role === 'principal' ? '· 总校长' : ''}${t.campus_name && t.campus_id !== headCampus?.id ? ' · ' + t.campus_name : ''}${t.resigned ? ' · 已离职' : ''}${!t.is_active && !t.resigned ? ' · 已停用' : ''}`"
+              :value="t.id"
+              :disabled="t.resigned || !t.is_active"
+            />
+          </el-select>
+          <div class="form-tip">保存后本校区负责人将更新为所选账号；未被选中的原负责人自动降为教师。可同时选择总校长本人。</div>
         </el-form-item>
-        <template v-if="headMode === 'select'">
-          <el-form-item label="选择教师">
-            <el-select v-model="headUserId" placeholder="从本机构教师中选择" clearable filterable style="width: 100%">
-              <el-option v-for="t in teachers" :key="t.id" :label="`${t.name}（${t.username}）${t.campus_id ? '· 归属:' + campusName(t.campus_id) : ''}`" :value="t.id" />
-            </el-select>
-          </el-form-item>
-        </template>
-        <template v-else>
+        <el-form-item label="新建负责人">
+          <el-switch v-model="headCreateMode" active-text="同时新建一个负责人账号" />
+        </el-form-item>
+        <template v-if="headCreateMode">
           <el-form-item label="负责人姓名" required>
             <el-input v-model="headNew.name" placeholder="如：王小明" />
           </el-form-item>
@@ -234,7 +255,9 @@
           </el-form-item>
         </template>
       </el-form>
-      <div class="head-tip">校长管理号只能查看/操作自己校区的数据（学生、教师、收支等）；原负责人会自动降为教师。新建的负责人账号可直接在小程序/PC 登录使用。</div>
+      <div class="head-tip">
+        校长管理号只能查看/操作自己管辖校区的数据（学生、教师、收支等）。负责人离职后：账号停用、校区全部数据保留；重新指定/新建负责人即自动完成数据交接（学生、收支、收费记录全部移交）。
+      </div>
       <template #footer>
         <el-button @click="headVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSaveHead">保存</el-button>
@@ -292,7 +315,7 @@ const overview = ref(null)
 const items = ref([])
 const uncategorized = ref(null)
 const txns = ref([])
-const teachers = ref([])
+const headCandidates = ref([])
 const filterCampus = ref(null)
 const filterKind = ref(null)
 
@@ -301,8 +324,8 @@ const headVisible = ref(false)
 const txnVisible = ref(false)
 const saving = ref(false)
 const headCampus = ref(null)
-const headMode = ref('select')
-const headUserId = ref(null)
+const headUserIds = ref([])
+const headCreateMode = ref(false)
 const headNew = reactive({ name: '', username: '', password: '', phone: '' })
 
 const canManage = computed(() => overview.value?.can_manage ?? userStore.isPrincipal)
@@ -335,7 +358,11 @@ async function loadAll() {
   items.value = overview.value.items || []
   uncategorized.value = overview.value.uncategorized || null
   if (userStore.isPrincipal) {
-    teachers.value = await request.get('/auth/teachers')
+    try {
+      headCandidates.value = await request.get('/campuses/head-candidates')
+    } catch (e) {
+      headCandidates.value = []
+    }
   }
 }
 
@@ -391,17 +418,17 @@ async function handleDeleteCampus(c) {
   }
 }
 
-// ===== 负责人 =====
+// ===== 负责人（多选，含总校长；支持离职交接） =====
 function openHead(c) {
   headCampus.value = c
-  headMode.value = 'select'
-  headUserId.value = c.head?.id ?? null
+  headUserIds.value = (c.heads || []).map((h) => h.id)
+  headCreateMode.value = false
   Object.assign(headNew, { name: '', username: '', password: '', phone: '' })
   headVisible.value = true
 }
 
 async function handleSaveHead() {
-  if (headMode.value === 'create') {
+  if (headCreateMode.value) {
     if (!headNew.name.trim()) {
       ElMessage.warning('请输入负责人姓名')
       return
@@ -417,21 +444,37 @@ async function handleSaveHead() {
   }
   saving.value = true
   try {
-    const payload =
-      headMode.value === 'create'
-        ? {
-            username: headNew.username.trim(),
-            password: headNew.password,
-            name: headNew.name.trim(),
-            phone: headNew.phone || null,
-          }
-        : { user_id: headUserId.value }
+    const payload = { user_ids: headUserIds.value }
+    if (headCreateMode.value) {
+      Object.assign(payload, {
+        username: headNew.username.trim(),
+        password: headNew.password,
+        name: headNew.name.trim(),
+        phone: headNew.phone || null,
+      })
+    }
     await request.post(`/campuses/${headCampus.value.id}/head`, payload)
-    ElMessage.success('负责人已设置')
+    ElMessage.success(headCreateMode.value ? '负责人已添加' : '负责人已设置')
     headVisible.value = false
     loadAll()
   } finally {
     saving.value = false
+  }
+}
+
+async function handleResignHead(h) {
+  await ElMessageBox.confirm(
+    `确定办理「${h.name}」的离职吗？\n离职后其账号将停用，校区全部数据（学生、教师、收支、收费记录）都会保留。\n您之后可新建/指定负责人，新负责人将自动接管本校区全部数据。`,
+    '负责人离职',
+    { type: 'warning', confirmButtonText: '办理离职', confirmButtonClass: 'el-button--danger' },
+  )
+  try {
+    const res = await request.post(`/campuses/${headCampus.value.id}/head/resign`, { user_id: h.id })
+    ElMessage.success(res.tip || '离职办理完成，校区数据已保留')
+    headVisible.value = false
+    loadAll()
+  } catch (e) {
+    // 全局拦截器已提示错误
   }
 }
 
@@ -696,6 +739,37 @@ onMounted(() => {
 .head-current {
   font-weight: 600;
   color: var(--success);
+}
+.head-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.head-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.head-name {
+  font-size: 13px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.head-tag {
+  margin-right: 4px;
+}
+.form-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1.5;
 }
 .head-tip {
   font-size: 12px;

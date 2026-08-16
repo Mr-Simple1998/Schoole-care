@@ -80,6 +80,8 @@ class User(Base):
     wx_openid = Column(String(64), nullable=True, index=True)  # 微信小程序 openid（本地开发模式存模拟值）
     campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)  # 所属校区（教师/校区负责人）
     is_active = Column(Boolean, default=True)
+    resigned = Column(Boolean, default=False)          # 是否已离职（离职后账号停用，数据保留）
+    resigned_at = Column(DateTime, nullable=True)      # 离职时间
     created_at = Column(DateTime, default=datetime.utcnow)
 
     organization = relationship("Organization", back_populates="users")

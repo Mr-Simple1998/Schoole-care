@@ -11,7 +11,10 @@
 					<view class="text-muted s-meta">
 						{{ student.school || '' }} {{ student.grade || '' }} · 入学 {{ student.enrollment_date || '-' }}
 					</view>
-					<view class="s-meta" v-if="student.teacher_name"><text class="text-info">负责教师：{{ student.teacher_name }}</text></view>
+					<view class="s-meta">
+						<text class="text-info">负责教师：{{ student.teacher_name || '暂存校区负责人' }}</text>
+						<text v-if="canAssign" class="change-teacher" @click="openTeacherPick">更换 ›</text>
+					</view>
 				</view>
 			</view>
 		</view>
@@ -167,6 +170,27 @@
 			</view>
 		</view>
 
+		<!-- 更换负责教师弹窗（总校长/校区负责人：分配或暂存） -->
+		<view class="mask" v-if="showTeacherPick" @click="showTeacherPick=false">
+			<view class="dialog" @click.stop>
+				<view class="dialog-title">更换负责教师</view>
+				<view class="field">
+					<text class="label">学生：{{ student && student.name }}（{{ student && student.student_no }}）</text>
+				</view>
+				<view class="field">
+					<text class="label">负责教师</text>
+					<picker :range="teacherLabels" @change="e => selectedTeacherId = teacherIds[e.detail.value]">
+						<view class="input">{{ selectedTeacherName }}</view>
+					</picker>
+					<text class="pick-tip">选择“暂存至校区负责人”可清空负责教师，学生数据全部保留。</text>
+				</view>
+				<view class="dialog-btns">
+					<button class="btn-cancel" @click="showTeacherPick=false">取消</button>
+					<button class="btn-primary" @click="doChangeTeacher">保存</button>
+				</view>
+			</view>
+		</view>
+
 		<!-- 记录列表 -->
 		<view class="card" v-if="scores.length">
 			<view class="card-title"><text class="bar"></text>近期成绩</view>
@@ -192,7 +216,8 @@
 </template>
 
 <script>
-import { get, post } from '../../utils/request';
+import { get, post, put } from '../../utils/request';
+import { useUserStore } from '../../stores/user';
 
 const PERF_TYPES = ['纪律','专注','积极','作业','礼仪'];
 
@@ -200,9 +225,13 @@ export default {
 	data() {
 		return {
 			id: null,
+			store: useUserStore(),
 			student: null,
 			scores: [],
 			hwList: [],
+			teachers: [],
+			showTeacherPick: false,
+			selectedTeacherId: null,
 			showAttend: false, attendSubjects: [], attendSubjectId: null, attendDate: '',
 			showScore: false, scoreForm: { subject: '', score: '', exam_type: '平时考' },
 			showHw: false, hwForm: { subject: '', content: '' },
@@ -210,6 +239,20 @@ export default {
 		};
 	},
 	computed: {
+		canAssign() {
+			return this.store.isPrincipal || this.store.isSubPrincipal;
+		},
+		teacherLabels() {
+			return ['暂存至校区负责人'].concat(this.teachers.map(t => `${t.name}（${t.username}）`));
+		},
+		teacherIds() {
+			return [null].concat(this.teachers.map(t => t.id));
+		},
+		selectedTeacherName() {
+			if (this.selectedTeacherId === null || this.selectedTeacherId === undefined) return '暂存至校区负责人';
+			const t = this.teachers.find(x => x.id === this.selectedTeacherId);
+			return t ? `${t.name}（${t.username}）` : '暂存至校区负责人';
+		},
 		subjectNames() {
 			return this.attendSubjects.map(s => s.name);
 		},
@@ -260,6 +303,25 @@ export default {
 				if (this.attendSubjects.length) this.attendSubjectId = this.attendSubjects[0].id;
 				this.scores = await get('/learning/scores', { student_id: this.id });
 				this.hwList = await get('/learning/homework', { student_id: this.id });
+				if (this.canAssign) {
+					try {
+						this.teachers = await get('/auth/teachers');
+					} catch (e) {
+						this.teachers = [];
+					}
+				}
+			} catch (e) {}
+		},
+		openTeacherPick() {
+			this.selectedTeacherId = (this.student && this.student.teacher_id) || null;
+			this.showTeacherPick = true;
+		},
+		async doChangeTeacher() {
+			try {
+				await put('/students/' + this.id, { teacher_id: this.selectedTeacherId });
+				uni.showToast({ title: '已保存', icon: 'success' });
+				this.showTeacherPick = false;
+				this.loadAll();
 			} catch (e) {}
 		},
 		expireClass(d) {
@@ -364,6 +426,8 @@ export default {
 .s-no { font-size: 22rpx; color: #909399; margin-left: 10rpx; font-weight: 400; }
 .status-tag { margin-left: 12rpx; }
 .s-meta { font-size: 24rpx; margin-top: 6rpx; }
+.change-teacher { color: #10b981; margin-left: 16rpx; }
+.pick-tip { font-size: 22rpx; color: #909399; margin-top: 8rpx; line-height: 1.5; }
 .session-item { padding: 14rpx 0; border-bottom: 1rpx solid #f0f0f0; }
 .session-item:last-child { border-bottom: none; }
 .session-head { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }

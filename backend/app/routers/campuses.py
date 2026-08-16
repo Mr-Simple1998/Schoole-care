@@ -15,10 +15,10 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Student, User, UserRole
-from ..models_campus import Campus, CampusTransaction
+from ..models_campus import Campus, CampusHead, CampusTransaction
 from ..models_income import FeeRecord, Invoice
 from ..models_learning import Attendance
-from ..security import get_current_user, hash_password, is_head_role
+from ..security import get_current_user, hash_password, is_head_role, managed_campus_ids
 
 router = APIRouter()
 
@@ -28,21 +28,52 @@ EXPENSE_CATEGORIES = ("房租", "工资", "水电", "其他")
 
 # ---------- 权限辅助 ----------
 def _org_campus_ids(db: Session, user: User) -> set[int] | None:
-    """总校长返回 None（可见全部校区概况，只读总览）；校区负责人仅可见自己校区"""
-    if user.role == UserRole.PRINCIPAL:
-        return None
-    if user.campus_id:
-        return {user.campus_id}
-    return set()
+    """总校长返回 None（可见全部校区概况，只读总览）；校区负责人可见自己管辖的校区（支持多校区）"""
+    return managed_campus_ids(db, user)
 
 
 def _require_campus(db: Session, user: User, campus_id: int) -> Campus:
     campus = db.query(Campus).filter(Campus.id == campus_id, Campus.org_id == user.org_id).first()
     if not campus:
         raise HTTPException(status_code=404, detail="校区不存在")
-    if is_head_role(user.role) and user.campus_id != campus.id:
-        raise HTTPException(status_code=403, detail="只能操作自己校区的数据")
+    if is_head_role(user.role):
+        managed = managed_campus_ids(db, user) or set()
+        if campus.id not in managed:
+            raise HTTPException(status_code=403, detail="只能操作自己管辖校区的数据")
     return campus
+
+
+def _campus_heads(db: Session, org_id: int, campus_id: int) -> list[dict]:
+    """校区负责人列表（关联表 + 存量兼容：campus_id 归属的负责人），按关联时间排序"""
+    rows = db.query(CampusHead).filter(
+        CampusHead.org_id == org_id, CampusHead.campus_id == campus_id
+    ).order_by(CampusHead.id).all()
+    heads = []
+    seen = set()
+    for ch in rows:
+        u = ch.user
+        if not u or u.id in seen:
+            continue
+        seen.add(u.id)
+        heads.append({"id": u.id, "name": u.name, "username": u.username, "phone": u.phone,
+                      "role": u.role.value if hasattr(u.role, "value") else str(u.role),
+                      "is_active": bool(u.is_active), "resigned": bool(u.resigned)})
+    # 存量兼容：老数据中负责人仅通过 users.campus_id 关联（未写入关联表）
+    legacy = db.query(User).filter(
+        User.org_id == org_id,
+        User.role.in_([UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
+        User.campus_id == campus_id,
+    ).order_by(User.id).all()
+    for u in legacy:
+        if u.id not in seen:
+            heads.append({"id": u.id, "name": u.name, "username": u.username, "phone": u.phone,
+                          "role": u.role.value if hasattr(u.role, "value") else str(u.role),
+                          "is_active": bool(u.is_active), "resigned": bool(u.resigned)})
+    return heads
+
+
+def _active_head_names(db: Session, org_id: int, campus_id: int) -> list[dict]:
+    return [h for h in _campus_heads(db, org_id, campus_id) if h["is_active"] and not h["resigned"]]
 
 
 # ---------- 概况统计 ----------
@@ -84,6 +115,7 @@ def _overview(db: Session, org_id: int, campus_id: int | None, month_start: date
         teacher_count = db.query(User).filter(
             User.org_id == org_id,
             User.is_active == True,  # noqa: E712
+            User.resigned == False,  # noqa: E712
             User.role.in_([UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
             User.campus_id == campus_id,
         ).count()
@@ -105,16 +137,13 @@ def _overview(db: Session, org_id: int, campus_id: int | None, month_start: date
         ).all()
         unpaid = sum((inv.amount or 0) - (inv.paid_amount or 0) for inv in invs)
 
+    # 负责人：支持多名（含总校长），离职负责人单独标注
+    heads = []
     head = None
     if campus_id is not None:
-        h = db.query(User).filter(
-            User.org_id == org_id,
-            User.role.in_([UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
-            User.campus_id == campus_id,
-            User.is_active == True,  # noqa: E712
-        ).first()
-        if h:
-            head = {"id": h.id, "name": h.name, "username": h.username, "phone": h.phone}
+        heads = _campus_heads(db, org_id, campus_id)
+        active = [h for h in heads if h["is_active"] and not h["resigned"]]
+        head = active[0] if active else None
 
     month_income = round(float(tuition) + float(manual_income), 2)
     month_expense = round(float(manual_expense), 2)
@@ -126,6 +155,7 @@ def _overview(db: Session, org_id: int, campus_id: int | None, month_start: date
         "month_balance": round(month_income - month_expense, 2),
         "today_attendance": today_attendance,
         "unpaid": round(unpaid, 2),
+        "heads": heads,
         "head": head,
     }
 
@@ -163,6 +193,28 @@ def campus_options(current_user: User = Depends(get_current_user), db: Session =
     return [{"id": c.id, "name": c.name, "status": bool(c.status)} for c in rows]
 
 
+# ---------- 负责人候选（总校长设置校区负责人时的多选项，含总校长本人） ----------
+@router.get("/head-candidates")
+def head_candidates(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != UserRole.PRINCIPAL:
+        raise HTTPException(status_code=403, detail="仅总校长可查看负责人候选")
+    users = db.query(User).filter(User.org_id == current_user.org_id).order_by(User.id).all()
+    campus_map = {c.id: c.name for c in db.query(Campus).filter(Campus.org_id == current_user.org_id).all()}
+    return [
+        {
+            "id": u.id,
+            "name": u.name,
+            "username": u.username,
+            "role": u.role.value if hasattr(u.role, "value") else str(u.role),
+            "campus_id": u.campus_id,
+            "campus_name": campus_map.get(u.campus_id),
+            "is_active": bool(u.is_active),
+            "resigned": bool(u.resigned),
+        }
+        for u in users if u.role != UserRole.PLATFORM
+    ]
+
+
 # ---------- 校区列表 + 概况 ----------
 @router.get("")
 def list_campuses(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -193,10 +245,11 @@ def list_campuses(current_user: User = Depends(get_current_user), db: Session = 
     summary = None
     if current_user.role == UserRole.PRINCIPAL:
         all_rows = items + ([uncategorized] if uncategorized else [])
-        # 教师数按机构整体统计（含未分校区教师）
+        # 教师数按机构整体统计（含未分校区教师，不含离职）
         teacher_count = db.query(User).filter(
             User.org_id == org_id,
             User.is_active == True,  # noqa: E712
+            User.resigned == False,  # noqa: E712
             User.role.in_([UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
         ).count()
         summary = {
@@ -297,71 +350,216 @@ def delete_campus(campus_id: int, current_user: User = Depends(get_current_user)
     return {"detail": "已删除"}
 
 
-# ---------- 指定校区负责人（仅总校长；可新建账号或指定已有教师） ----------
+# ---------- 指定校区负责人（仅总校长；可多选，选项含总校长；可新建账号） ----------
 class HeadAssign(BaseModel):
-    user_id: int | None = None       # 指定已有教师账号（与新建账号二选一）
-    username: str | None = None      # 新建负责人账号：登录账号
-    password: str | None = None      # 新建负责人账号：密码
-    name: str | None = None          # 新建负责人账号：姓名
-    phone: str | None = None         # 新建负责人账号：电话（可选）
+    user_ids: list[int] | None = None  # 多选：现有账号 id（含总校长/教师/其他校区负责人）
+    user_id: int | None = None         # 兼容旧单选项
+    username: str | None = None        # 新建负责人账号：登录账号（填写则新建并添加）
+    password: str | None = None        # 新建负责人账号：密码
+    name: str | None = None            # 新建负责人账号：姓名
+    phone: str | None = None           # 新建负责人账号：电话（可选）
+
+
+def _sync_campus_head_roles(db: Session, org_id: int, campus_id: int, keep_ids: set[int], removed_ids: set[int]):
+    """同步负责人角色：
+    - 保留/新增的负责人：教师类角色升级为 sub_principal（总校长不动），并归属该校区
+    - 被移除的负责人：若不再管辖任何校区，则降级为教师（离职账号保持停用状态不动）
+    """
+    for uid in keep_ids:
+        u = db.query(User).filter(User.id == uid, User.org_id == org_id).first()
+        if not u or u.role == UserRole.PRINCIPAL or u.role == UserRole.PLATFORM:
+            continue
+        if u.role not in (UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD):
+            u.role = UserRole.SUB_PRINCIPAL
+        u.campus_id = campus_id
+        u.resigned = False
+        u.is_active = True  # 重新指定为负责人时恢复启用
+    for uid in removed_ids:
+        u = db.query(User).filter(User.id == uid, User.org_id == org_id).first()
+        if not u or u.role == UserRole.PRINCIPAL:
+            continue
+        # 仍管辖其他校区则保留负责人角色，并把主校区指到剩余校区
+        remaining = db.query(CampusHead).filter(
+            CampusHead.user_id == uid, CampusHead.campus_id != campus_id
+        ).order_by(CampusHead.id).all()
+        if len(remaining) == 0 and is_head_role(u.role) and not u.resigned:
+            u.role = UserRole.TEACHER
+            u.campus_id = campus_id  # 降级为教师，保留校区归属
+        elif remaining and u.campus_id == campus_id:
+            u.campus_id = remaining[0].campus_id
 
 
 @router.post("/{campus_id}/head")
 def assign_campus_head(campus_id: int, data: HeadAssign, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """总校长设置校区负责人（校长管理号）：可手动新建负责人账号，或指定本机构已有教师；都不传则取消负责人。"""
+    """总校长设置校区负责人：可多选（选项含总校长/教师/其他校区负责人），也可新建账号并添加。
+
+    - 传入 user_ids：以该集合替换校区现有负责人（不包含在集合中的将被移除）
+    - 同时填写 username/password/name：新建负责人账号并加入最终负责人集合
+    - 数据（学生/收支等）始终归属校区，更换负责人自动完成“数据交接”
+    """
     if current_user.role != UserRole.PRINCIPAL:
         raise HTTPException(status_code=403, detail="仅总校长可指定负责人")
     campus = db.query(Campus).filter(Campus.id == campus_id, Campus.org_id == current_user.org_id).first()
     if not campus:
         raise HTTPException(status_code=404, detail="校区不存在")
 
-    # 原负责人降级为教师（保留校区归属）
-    db.query(User).filter(
-        User.org_id == current_user.org_id,
+    org_id = current_user.org_id
+
+    # 现有负责人集合（关联表；存量负责人已在启动迁移时回填）
+    existing = {ch.user_id for ch in db.query(CampusHead).filter(
+        CampusHead.org_id == org_id, CampusHead.campus_id == campus_id).all()}
+    # 存量兼容：极老数据中未写入关联表的负责人（防止误移除）
+    legacy_ids = {u.id for u in db.query(User).filter(
+        User.org_id == org_id,
         User.role.in_([UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
         User.campus_id == campus_id,
-    ).update({"role": UserRole.TEACHER}, synchronize_session=False)
+    ).all()}
 
-    has_user = data.user_id is not None
-    has_new = bool(data.username or data.password or data.name)
-    if has_user and has_new:
-        raise HTTPException(status_code=400, detail="请选择一种方式：指定已有账号或新建账号")
+    selected = list(data.user_ids or [])
+    if data.user_id is not None and data.user_id not in selected:
+        selected.append(data.user_id)
 
-    head = None
-    if has_user:
-        user = db.query(User).filter(User.id == data.user_id, User.org_id == current_user.org_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="账号不存在")
-        if user.role not in (UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD):
-            raise HTTPException(status_code=400, detail="只能指定教师账号为校区负责人")
-        user.role = UserRole.SUB_PRINCIPAL
-        user.campus_id = campus.id
-        head = user
-    elif has_new:
+    # 校验所选账号均为本机构有效账号且角色合法（含总校长）
+    final_ids: set[int] = set()
+    if selected:
+        users = db.query(User).filter(User.id.in_(selected), User.org_id == org_id).all()
+        if len(users) != len(set(selected)):
+            raise HTTPException(status_code=400, detail="存在无效账号")
+        for u in users:
+            if u.role == UserRole.PLATFORM:
+                raise HTTPException(status_code=400, detail="平台管理员不能设为校区负责人")
+            if u.resigned and u.id not in existing:
+                raise HTTPException(status_code=400, detail=f"「{u.name}」已离职，请先重新启用或另选他人")
+        final_ids = {u.id for u in users}
+    # 未传任何选择且未新建账号：视为取消全部负责人（兼容旧“清空取消”语义）
+    if not selected and not (data.username or data.password or data.name):
+        final_ids = set()
+    # 仅新建账号（未多选现有账号）：保留现有负责人并追加新账号
+    elif not selected:
+        final_ids |= existing | legacy_ids
+
+    # 新建负责人账号（可选）
+    new_head = None
+    if data.username or data.password or data.name:
         if not data.username or not data.password or not data.name:
             raise HTTPException(status_code=400, detail="新建负责人需填写姓名、登录账号、密码")
         if len(data.password) < 6:
             raise HTTPException(status_code=400, detail="密码至少 6 位")
         if db.query(User).filter(User.username == data.username).first():
             raise HTTPException(status_code=400, detail="登录账号已存在")
-        head = User(
+        new_head = User(
             username=data.username.strip(),
             password_hash=hash_password(data.password),
             name=data.name.strip(),
             role=UserRole.SUB_PRINCIPAL,
             campus_id=campus.id,
             phone=data.phone,
-            org_id=current_user.org_id,
+            org_id=org_id,
         )
-        db.add(head)
+        db.add(new_head)
+        db.flush()
+        final_ids.add(new_head.id)
 
+    removed = existing - final_ids
+
+    # 同步关联表
+    for uid in final_ids:
+        if uid not in existing:
+            db.add(CampusHead(org_id=org_id, campus_id=campus_id, user_id=uid))
+    if removed:
+        db.query(CampusHead).filter(
+            CampusHead.org_id == org_id,
+            CampusHead.campus_id == campus_id,
+            CampusHead.user_id.in_(removed),
+        ).delete(synchronize_session=False)
+
+    _sync_campus_head_roles(db, org_id, campus_id, final_ids, removed)
     db.commit()
-    if head:
-        db.refresh(head)
+
+    heads = _campus_heads(db, org_id, campus_id)
     return {
         "detail": "负责人已设置",
         "campus_id": campus.id,
-        "head": {"id": head.id, "name": head.name, "username": head.username} if head else None,
+        "heads": heads,
+        "head": next((h for h in heads if h["is_active"] and not h["resigned"]), None),
+        "new_head": {"id": new_head.id, "name": new_head.name, "username": new_head.username} if new_head else None,
+    }
+
+
+# ---------- 校区负责人离职（仅总校长）：账号停用、校区数据全部保留，供新负责人接管 ----------
+class HeadResign(BaseModel):
+    user_id: int
+
+
+@router.post("/{campus_id}/head/resign")
+def resign_campus_head(campus_id: int, data: HeadResign, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """校区负责人离职处理：
+    - 负责人账号停用并标记离职（不可再登录）
+    - 校区全部数据（学生/教师/收支/收费记录）原样保留
+    - 该负责人名下直接负责的学生暂存至校区（teacher_id 置空），由总校长/新负责人后续分配
+    - 总校长可在“负责人”中重新建号，新负责人即自动接管该校区全部数据
+    """
+    if current_user.role != UserRole.PRINCIPAL:
+        raise HTTPException(status_code=403, detail="仅总校长可办理负责人离职")
+    campus = db.query(Campus).filter(Campus.id == campus_id, Campus.org_id == current_user.org_id).first()
+    if not campus:
+        raise HTTPException(status_code=404, detail="校区不存在")
+    user = db.query(User).filter(User.id == data.user_id, User.org_id == current_user.org_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    if user.role == UserRole.PRINCIPAL:
+        raise HTTPException(status_code=400, detail="总校长为机构所有者，不可办理离职")
+    if user.role not in (UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD):
+        raise HTTPException(status_code=400, detail="该账号不是校区负责人")
+
+    is_head = db.query(CampusHead).filter(
+        CampusHead.org_id == current_user.org_id,
+        CampusHead.campus_id == campus_id,
+        CampusHead.user_id == user.id,
+    ).first() is not None
+    legacy_head = user.campus_id == campus_id
+    if not is_head and not legacy_head:
+        raise HTTPException(status_code=400, detail="该账号不是该校区负责人")
+
+    org_id = current_user.org_id
+    # 1. 停用账号并标记离职
+    user.is_active = False
+    user.resigned = True
+    user.resigned_at = datetime.utcnow()
+    # 2. 从该校区负责人关联表中移除
+    db.query(CampusHead).filter(
+        CampusHead.org_id == org_id,
+        CampusHead.campus_id == campus_id,
+        CampusHead.user_id == user.id,
+    ).delete(synchronize_session=False)
+    # 若不再担任任何校区负责人，则降级为教师（账号仍停用，历史保留）；
+    # 仍管辖其他校区时把主校区指到剩余校区
+    remaining = db.query(CampusHead).filter(
+        CampusHead.org_id == org_id, CampusHead.user_id == user.id
+    ).order_by(CampusHead.id).all()
+    if not remaining and is_head_role(user.role):
+        user.role = UserRole.TEACHER
+    elif remaining and user.campus_id == campus_id:
+        user.campus_id = remaining[0].campus_id
+    # 3. 名下学生暂存至校区（数据保留，教师置空，由校区负责人统一再分配）
+    students = db.query(Student).filter(
+        Student.org_id == org_id, Student.teacher_id == user.id, Student.deleted == False  # noqa: E712
+    ).all()
+    for s in students:
+        s.teacher_id = None
+        if s.campus_id is None:
+            s.campus_id = campus_id  # 未归属校区的学生暂存到该校区
+    db.commit()
+    return {
+        "detail": "负责人已办理离职",
+        "user_id": user.id,
+        "name": user.name,
+        "campus_id": campus.id,
+        "campus_student_kept": db.query(Student).filter(
+            Student.org_id == org_id, Student.campus_id == campus.id, Student.deleted == False  # noqa: E712
+        ).count(),
+        "students_transferred": len(students),
+        "tip": "校区数据已全部保留。请在“负责人”中新建账号，新负责人将自动接管本校区全部数据。",
     }
 
 
@@ -434,9 +632,10 @@ def list_transactions(
         raise HTTPException(status_code=403, detail="无权限查看收支明细")
     q = db.query(CampusTransaction).filter(CampusTransaction.org_id == current_user.org_id)
     if is_head_role(current_user.role):
-        q = q.filter(CampusTransaction.campus_id == current_user.campus_id)
+        managed = managed_campus_ids(db, current_user) or set()
+        q = q.filter(CampusTransaction.campus_id.in_(managed))
     if campus_id:
-        if is_head_role(current_user.role) and campus_id != current_user.campus_id:
+        if is_head_role(current_user.role) and campus_id not in (managed_campus_ids(db, current_user) or set()):
             raise HTTPException(status_code=403, detail="只能查看自己校区的收支")
         q = q.filter(CampusTransaction.campus_id == campus_id)
     if kind:
@@ -461,7 +660,7 @@ def delete_transaction(txn_id: int, current_user: User = Depends(get_current_use
     if not txn:
         raise HTTPException(status_code=404, detail="收支记录不存在")
     if is_head_role(current_user.role):
-        if txn.campus_id != current_user.campus_id:
+        if txn.campus_id not in (managed_campus_ids(db, current_user) or set()):
             raise HTTPException(status_code=403, detail="只能删除自己校区的收支记录")
         if txn.created_by != current_user.id:
             raise HTTPException(status_code=403, detail="只能删除自己登记的收支记录")

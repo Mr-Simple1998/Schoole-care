@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Student, User, UserRole
 from ..models_points import PointRecord, PointSetting, Prize, Redemption
-from ..security import get_current_user, is_head_role
+from ..security import get_current_user, is_head_role, managed_campus_ids
 
 router = APIRouter()
 
@@ -18,7 +18,8 @@ def _check_student_scope(db: Session, current_user: User, student: Student):
         if student.teacher_id != current_user.id:
             raise HTTPException(status_code=403, detail="只能操作自己负责的学生")
     elif is_head_role(current_user.role):
-        if student.campus_id != current_user.campus_id:
+        managed = managed_campus_ids(db, current_user) or set()
+        if student.campus_id not in managed:
             raise HTTPException(status_code=403, detail="只能操作本校区学生")
     elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
         if student.campus_id != current_user.campus_id:
@@ -166,7 +167,8 @@ def leaderboard(current_user: User = Depends(get_current_user), db: Session = De
     if current_user.role == UserRole.TEACHER:
         q = q.filter(Student.teacher_id == current_user.id)
     elif is_head_role(current_user.role):
-        q = q.filter(Student.campus_id == current_user.campus_id)
+        managed = managed_campus_ids(db, current_user) or set()
+        q = q.filter(Student.campus_id.in_(managed))
     elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
         q = q.filter(Student.campus_id == current_user.campus_id)
     students = q.limit(50).all()

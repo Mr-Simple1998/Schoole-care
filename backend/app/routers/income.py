@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+﻿from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -8,18 +8,19 @@ from ..database import get_db
 from ..models import Student, User, UserRole
 from ..models_income import FeeRecord, Invoice, RefundAdjustment, Installment, InstallmentRecord
 from ..security import (
-    get_current_user, get_current_principal_or_head, is_head_role,
+    get_current_user, get_current_principal_or_head, is_head_role, managed_campus_ids,
 )
 
 router = APIRouter()
 
 
-def _scope_income_students(q, current_user: User):
-    """按角色限定学生数据范围（教师=自己负责；校区负责人=本校区；总校长归属校区后=本校区）"""
+def _scope_income_students(q, db: Session, current_user: User):
+    """按角色限定学生数据范围（教师=自己负责；校区负责人=管辖校区（可多校区）；总校长归属校区后=本校区）"""
     if current_user.role == UserRole.TEACHER:
         return q.join(Student).filter(Student.teacher_id == current_user.id)
     if is_head_role(current_user.role):
-        return q.join(Student).filter(Student.campus_id == current_user.campus_id)
+        managed = managed_campus_ids(db, current_user) or set()
+        return q.join(Student).filter(Student.campus_id.in_(managed))
     if current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
         return q.join(Student).filter(Student.campus_id == current_user.campus_id)
     return q
@@ -31,7 +32,8 @@ def _check_student_scope(db: Session, current_user: User, student: Student):
         if student.teacher_id != current_user.id:
             raise HTTPException(status_code=403, detail="只能操作自己负责的学生")
     elif is_head_role(current_user.role):
-        if student.campus_id != current_user.campus_id:
+        managed = managed_campus_ids(db, current_user) or set()
+        if student.campus_id not in managed:
             raise HTTPException(status_code=403, detail="只能操作本校区学生")
     elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
         if student.campus_id != current_user.campus_id:
@@ -122,7 +124,7 @@ def _fee_with_name(fee, student=None):
 @router.get("/fees", response_model=list[FeeOut])
 def list_fees(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(FeeRecord).filter(FeeRecord.org_id == current_user.org_id)
-    q = _scope_income_students(q, current_user)
+    q = _scope_income_students(q, db, current_user)
     fees = q.order_by(FeeRecord.pay_date.desc()).all()
     result = []
     for f in fees:
@@ -243,7 +245,7 @@ def create_invoice(data: InvoiceCreate, current_user: User = Depends(get_current
 @router.get("/invoices", response_model=list[InvoiceOut])
 def list_invoices(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(Invoice).filter(Invoice.org_id == current_user.org_id)
-    q = _scope_income_students(q, current_user)
+    q = _scope_income_students(q, db, current_user)
     invoices = q.order_by(Invoice.created_at.desc()).all()
     result = []
     for inv in invoices:
@@ -259,7 +261,7 @@ def list_invoices(current_user: User = Depends(get_current_user), db: Session = 
 def list_overdue(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """欠费/未缴提醒：返回待缴账单及学生信息"""
     q = db.query(Invoice).filter(Invoice.status.in_(["待缴", "部分缴纳"]), Invoice.org_id == current_user.org_id)
-    q = _scope_income_students(q, current_user)
+    q = _scope_income_students(q, db, current_user)
     invoices = q.all()
     result = []
     for inv in invoices:
@@ -326,7 +328,7 @@ def create_refund(data: RefundCreate, current_user: User = Depends(get_current_u
 @router.get("/refunds", response_model=list[RefundOut])
 def list_refunds(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(RefundAdjustment).filter(RefundAdjustment.org_id == current_user.org_id)
-    q = _scope_income_students(q, current_user)
+    q = _scope_income_students(q, db, current_user)
     result = []
     for r in q.order_by(RefundAdjustment.created_at.desc()).all():
         item = RefundOut.model_validate(r)
@@ -395,7 +397,7 @@ def create_installment(data: InstallmentCreate, current_user: User = Depends(get
 @router.get("/installments", response_model=list[InstallmentOut])
 def list_installments(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(Installment).filter(Installment.org_id == current_user.org_id)
-    q = _scope_income_students(q, current_user)
+    q = _scope_income_students(q, db, current_user)
     insts = q.order_by(Installment.created_at.desc()).all()
     result = []
     for i in insts:

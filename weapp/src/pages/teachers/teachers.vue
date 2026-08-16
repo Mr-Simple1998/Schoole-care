@@ -57,9 +57,10 @@
 					</view>
 				</view>
 				<view class="ir-right">
-					<text class="tag" :class="t.is_active ? 'tag-success' : 'tag-danger'">
-						<text class="dot" :class="t.is_active ? 'dot-green' : 'dot-red'"></text>{{ t.is_active ? '启用' : '停用' }}
+					<text class="tag" :class="t.resigned ? 'tag-danger' : (t.is_active ? 'tag-success' : 'tag-danger')">
+						<text class="dot" :class="t.resigned ? 'dot-red' : (t.is_active ? 'dot-green' : 'dot-red')"></text>{{ t.resigned ? '已离职' : (t.is_active ? '启用' : '停用') }}
 					</text>
+					<text v-if="t.role === 'teacher' && t.is_active" class="resign" @click="doResign(t)">离职</text>
 					<text class="del" @click="doDelete(t)">删除</text>
 				</view>
 			</view>
@@ -157,6 +158,22 @@ export default {
 					}
 				}
 			});
+		},
+		doResign(t) {
+			uni.showModal({
+				title: '教师离职',
+				content: `确定办理「${t.name}」的离职吗？离职后账号停用，名下学生数据全部保留，暂存至所在校区负责人处，可再分配给其他教师或新账号。`,
+				confirmText: '办理离职',
+				success: async (res) => {
+					if (!res.confirm) return;
+					try {
+						const r = await post('/auth/users/' + t.id + '/resign');
+						const n = r.students_transferred || 0;
+						uni.showToast({ title: `离职完成，${n} 名学生已暂存校区`, icon: 'none' });
+						this.loadTeachers();
+					} catch (e) {}
+				}
+			});
 		}
 	}
 };
@@ -170,6 +187,7 @@ export default {
 .sub-divider { color: #c0c4cc; }
 .sub-subjects { color: #10b981; }
 .del { color: #f56c6c; margin-left: 8rpx; font-size: 26rpx; }
+.resign { color: #e6a23c; margin-left: 8rpx; font-size: 26rpx; }
 .empty { text-align: center; padding: 30rpx 0; }
 .mask { position: fixed; left:0; top:0; right:0; bottom:0; background: rgba(0,0,0,0.45); z-index:99; display:flex; align-items:center; justify-content:center; }
 .dialog { width: 80%; background:#fff; border-radius:16rpx; padding:36rpx 32rpx; }

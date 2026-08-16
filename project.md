@@ -293,3 +293,31 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 - PC 页面编译：Vite 按需编译 `http://localhost:5173/src/views/<Page>.vue` 返回 200。
 - 小程序页面校验：用 `frontend/node_modules/@vue/compiler-sfc` 对 weapp 页面做 parse + compileScript + compileTemplate。
 - 逻辑零改动核对：`git diff backend/` 为空；`git status --short` 只应有 UI 文件。
+
+---
+
+## 13. 校区负责人多选 + 离职交接功能（2026-08-16）
+
+本次新增三项核心功能（后端 + PC + 小程序三端同步）：
+
+### ① 校区负责人多选（选项含总校长）
+- 新表 `campus_heads`（campus_id + user_id 关联）：一个校区可有多名负责人。
+- `POST /api/campuses/{id}/head`：`user_ids` 多选（替换语义）；可同时传 username/password/name 新建账号并加入。
+- 候选接口 `GET /api/campuses/head-candidates`：本机构全部账号（含总校长 principal、其他校区负责人、教师），离职/停用账号前端置灰。
+- 权限升级：`security.managed_campus_ids(db, user)` 返回用户可管辖校区集合（users.campus_id ∪ campus_heads），总校长返回 None。students/income/learning/points/dashboard/subjects/campuses/auth 全部按该集合做多校区范围过滤。
+- 存量兼容：启动时 `main._ensure_schema()` 自动建表/加列并把存量单负责人回填到 campus_heads（migrate.py 同步支持）。
+
+### ② 校区负责人离职 → 数据保留 + 重新建号迁移
+- `POST /api/campuses/{id}/head/resign`：账号停用并标记 `resigned`，移除负责人关联（不再担任任何校区则降级为教师）；校区全部数据（学生/教师/收支/收费记录）原样保留；负责人名下直接负责的学生 teacher_id 置空暂存校区。
+- 重新建号 = 负责人对话框「同时新建账号」或教师管理页新建账号后指定，新负责人登录即自动接管校区全部数据（数据按 campus_id 归属，天然交接）。
+
+### ③ 教师离职 → 学生暂存校区负责人 → 再分配
+- `POST /api/auth/users/{id}/resign`：教师账号停用标记离职；名下学生 teacher_id 置空（未分校区学生自动归入教师所属校区），数据全部保留。
+- `POST /api/students/assign`：总校长/校区负责人批量把暂存学生分配给其他教师（或置空=暂存回校区负责人），跨校区批量会拦截。
+- 学生编辑（PC 列表弹窗 / 小程序详情页「更换教师」）支持选择负责教师，列表端“暂存校区”黄色标签提示。
+- `users.resigned` / `users.resigned_at` 字段；`update_user is_active=true` 重新启用时自动清除离职标记。
+
+### 约定
+- 总校长（principal）不可办理离职；平台管理员不可设为负责人。
+- 校区删除仍受保护（有学生/教师/收支时禁止删除，需先停用或转移）。
+- 测试方式：后端可直接调用路由函数做冒烟测试（无 httpx 时绕过 TestClient）；Vite/uni 构建需 `danger-full-access`（spawn EPERM 见 §11③）。

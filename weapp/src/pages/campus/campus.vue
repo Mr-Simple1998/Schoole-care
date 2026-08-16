@@ -37,7 +37,9 @@
 					<text class="campus-name">{{ c.name }}</text>
 					<text v-if="c.status === false" class="tag tag-grey">已停用</text>
 				</view>
-				<text v-if="c.head" class="tag tag-success">负责人·{{ c.head.name }}</text>
+				<view class="head-tags" v-if="c.heads && c.heads.length">
+					<text v-for="h in c.heads" :key="h.id" class="tag" :class="h.role === 'principal' ? 'tag-danger' : 'tag-success'">{{ h.name }}{{ h.role === 'principal' ? '·总校长' : '' }}</text>
+				</view>
 				<text v-else-if="canManage" class="tag tag-plain">未设负责人</text>
 			</view>
 			<view v-if="c.address || c.phone" class="campus-meta">
@@ -132,34 +134,35 @@
 			</view>
 		</view>
 
-		<!-- 负责人设置弹层（总校长） -->
+		<!-- 负责人设置弹层（总校长；可多选，含总校长；支持离职办理） -->
 		<view v-if="showHeadForm" class="overlay" @click="closeAll">
 			<view class="sheet" @click.stop>
-				<view class="sheet-title">设置「{{ headCampus && headCampus.name }}」负责人（校长管理号）</view>
-				<view class="kv-row" v-if="headCampus && headCampus.head">
-					<text class="kv-label">当前负责人</text>
-					<text class="kv-value">{{ headCampus.head.name }}（{{ headCampus.head.username }}）</text>
-				</view>
-				<view class="kv-row" v-else>
-					<text class="kv-label">当前负责人</text>
-					<text class="kv-value text-muted">未设置</text>
+				<view class="sheet-title">设置「{{ headCampus && headCampus.name }}」负责人（可多选）</view>
+				<view class="field">
+					<text class="label">当前负责人</text>
+					<view v-if="headCampus && headCampus.heads && headCampus.heads.length" class="head-list">
+						<view v-for="h in headCampus.heads" :key="h.id" class="head-item">
+							<text class="head-item-name">{{ h.name }}（{{ h.username }}）<text v-if="h.role === 'principal'" class="tag tag-danger">总校长</text></text>
+							<text class="link danger" @click="resignHead(h)">办理离职</text>
+						</view>
+					</view>
+					<text v-else class="kv-value text-muted">未设置</text>
 				</view>
 				<view class="field">
-					<text class="label">设置方式</text>
-					<radio-group class="flex" @change="e => headForm.mode = e.detail.value">
-						<label class="radio-item"><radio value="select" :checked="headForm.mode === 'select'" />从现有教师选择</label>
-						<label class="radio-item"><radio value="create" :checked="headForm.mode === 'create'" />手动新建账号</label>
-					</radio-group>
+					<text class="label">选择负责人（可多选）</text>
+					<checkbox-group class="head-check-group" @change="e => headForm.user_ids = (e.detail.value || []).map(Number)">
+						<label v-for="t in headCandidates" :key="t.id" class="check-item">
+							<checkbox :value="String(t.id)" :checked="headForm.user_ids.indexOf(t.id) > -1" :disabled="t.resigned || !t.is_active" />
+							<text class="check-label" :class="{ muted: t.resigned || !t.is_active }">{{ t.name }}（{{ t.username }}）{{ t.role === 'principal' ? '·总校长' : '' }}{{ t.resigned ? '·已离职' : '' }}{{ !t.is_active && !t.resigned ? '·已停用' : '' }}</text>
+						</label>
+					</checkbox-group>
+					<view class="head-tip">保存后校区负责人更新为所选账号，未选中的原负责人自动降为教师；可同时选择总校长本人。</view>
 				</view>
-				<template v-if="headForm.mode === 'select'">
-					<view class="field">
-						<text class="label">选择教师</text>
-						<picker :range="teacherLabels" @change="e => headForm.user_id = teacherIds[e.detail.value]">
-							<view class="input picker-box">{{ teacherName || '请选择（清空保存可取消负责人）' }}<text class="arrow">›</text></view>
-						</picker>
-					</view>
-				</template>
-				<template v-else>
+				<view class="field">
+					<text class="label">同时新建负责人账号</text>
+					<switch :checked="headForm.createMode" color="#10b981" @change="e => headForm.createMode = e.detail.value" />
+				</view>
+				<template v-if="headForm.createMode">
 					<view class="field">
 						<text class="label">负责人姓名 *</text>
 						<input class="input" v-model="headForm.name" placeholder="如：王小明" />
@@ -177,7 +180,7 @@
 						<input class="input" v-model="headForm.phone" placeholder="负责人电话（可选）" />
 					</view>
 				</template>
-				<view class="head-tip">校长管理号只能查看/操作自己校区的数据（学生、教师、收支等）；原负责人自动降为教师。</view>
+				<view class="head-tip">负责人离职后：账号停用、校区全部数据保留；重新指定/新建负责人即自动完成数据交接（学生、收支、收费记录全部移交）。</view>
 				<button class="btn-primary sheet-btn" :loading="saving" @click="saveHead">保存</button>
 			</view>
 		</view>
@@ -242,8 +245,8 @@ export default {
 			showTxnForm: false,
 			showHeadForm: false,
 			headCampus: null,
-			teachers: [],
-			headForm: { mode: 'select', user_id: null, name: '', username: '', password: '', phone: '' },
+			headCandidates: [],
+			headForm: { user_ids: [], createMode: false, name: '', username: '', password: '', phone: '' },
 			saving: false,
 			campusForm: { id: null, name: '', address: '', phone: '', remark: '', status: true },
 			txnForm: { campus_id: null, kind: 'income', category: '', amount: '', record_date: '', remark: '' },
@@ -267,16 +270,6 @@ export default {
 		},
 		categoryOptions() {
 			return this.txnForm.kind === 'income' ? this.INCOME_CATS : this.EXPENSE_CATS;
-		},
-		teacherLabels() {
-			return this.teachers.map(t => `${t.name}（${t.username}）`);
-		},
-		teacherIds() {
-			return this.teachers.map(t => t.id);
-		},
-		teacherName() {
-			const t = this.teachers.find(x => x.id === this.headForm.user_id);
-			return t ? `${t.name}（${t.username}）` : '';
 		}
 	},
 	onShow() {
@@ -299,18 +292,22 @@ export default {
 				this.uncategorized = this.overview.uncategorized || null;
 				this.canManage = !!this.overview.canManage;
 				if (this.canManage) {
-					this.teachers = await get('/auth/teachers');
+					try {
+						this.headCandidates = await get('/campuses/head-candidates');
+					} catch (e) {
+						this.headCandidates = [];
+					}
 				}
 			} catch (e) {}
 		},
-		// ---- 设置负责人（总校长手动编辑） ----
+		// ---- 设置负责人（总校长；多选含总校长，支持离职办理） ----
 		openHead(c) {
 			this.headCampus = c;
-			this.headForm = { mode: 'select', user_id: c.head ? c.head.id : null, name: '', username: '', password: '', phone: '' };
+			this.headForm = { user_ids: (c.heads || []).map(h => h.id), createMode: false, name: '', username: '', password: '', phone: '' };
 			this.showHeadForm = true;
 		},
 		async saveHead() {
-			if (this.headForm.mode === 'create') {
+			if (this.headForm.createMode) {
 				if (!this.headForm.name.trim()) {
 					uni.showToast({ title: '请输入负责人姓名', icon: 'none' });
 					return;
@@ -326,14 +323,15 @@ export default {
 			}
 			this.saving = true;
 			try {
-				const payload = this.headForm.mode === 'create'
-					? {
-							username: this.headForm.username.trim(),
-							password: this.headForm.password,
-							name: this.headForm.name.trim(),
-							phone: this.headForm.phone || null
-						}
-					: { user_id: this.headForm.user_id };
+				const payload = { user_ids: this.headForm.user_ids };
+				if (this.headForm.createMode) {
+					Object.assign(payload, {
+						username: this.headForm.username.trim(),
+						password: this.headForm.password,
+						name: this.headForm.name.trim(),
+						phone: this.headForm.phone || null
+					});
+				}
 				await post(`/campuses/${this.headCampus.id}/head`, payload);
 				uni.showToast({ title: '负责人已设置', icon: 'success' });
 				this.showHeadForm = false;
@@ -342,6 +340,22 @@ export default {
 			} finally {
 				this.saving = false;
 			}
+		},
+		resignHead(h) {
+			uni.showModal({
+				title: '负责人离职',
+				content: `确定办理「${h.name}」的离职吗？离职后账号停用，校区全部数据（学生、教师、收支、收费记录）都会保留；之后新建/指定负责人即可自动接管全部数据。`,
+				confirmText: '办理离职',
+				success: async (res) => {
+					if (!res.confirm) return;
+					try {
+						const r = await post(`/campuses/${this.headCampus.id}/head/resign`, { user_id: h.id });
+						uni.showToast({ title: '离职办理完成', icon: 'success' });
+						this.showHeadForm = false;
+						this.loadAll();
+					} catch (e) {}
+				}
+			});
 		},
 		// ---- 设置校区 ----
 		openCampus(c) {
@@ -480,6 +494,27 @@ export default {
 	gap: 10rpx;
 	margin-bottom: 12rpx;
 }
+.head-tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8rpx;
+	justify-content: flex-end;
+	max-width: 55%;
+}
+.head-list { display: flex; flex-direction: column; gap: 10rpx; width: 100%; }
+.head-item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	background: #f5f7fa;
+	border-radius: 12rpx;
+	padding: 14rpx 20rpx;
+}
+.head-item-name { font-size: 26rpx; color: #303133; }
+.head-check-group { display: flex; flex-direction: column; gap: 8rpx; }
+.check-item { display: flex; align-items: center; gap: 10rpx; padding: 8rpx 0; }
+.check-label { font-size: 26rpx; color: #303133; }
+.check-label.muted { color: #c0c4cc; }
 .campus-title { display: flex; align-items: center; gap: 10rpx; min-width: 0; }
 .campus-name { font-size: 32rpx; font-weight: 700; color: #303133; }
 .campus-meta {

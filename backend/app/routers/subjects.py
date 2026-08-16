@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Student, User, UserRole
 from ..models_subject import Subject, StudentSubject
-from ..security import get_current_user, get_current_principal, is_head_role
+from ..security import get_current_user, get_current_principal, is_head_role, managed_campus_ids
 
 router = APIRouter()
 
@@ -44,7 +44,8 @@ def subject_stats(current_user: User = Depends(get_current_user), db: Session = 
     if current_user.role == UserRole.TEACHER:
         student_q = student_q.filter(Student.teacher_id == current_user.id)
     elif is_head_role(current_user.role):
-        student_q = student_q.filter(Student.campus_id == current_user.campus_id)
+        managed = managed_campus_ids(db, current_user) or set()
+        student_q = student_q.filter(Student.campus_id.in_(managed))
     elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
         student_q = student_q.filter(Student.campus_id == current_user.campus_id)
 

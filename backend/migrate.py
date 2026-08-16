@@ -39,6 +39,8 @@ def main():
         print("补充字段：")
         add_column_if_missing(conn, "users", "org_id", "INTEGER")
         add_column_if_missing(conn, "users", "avatar", "VARCHAR(255)")
+        add_column_if_missing(conn, "users", "resigned", "BOOLEAN DEFAULT 0")
+        add_column_if_missing(conn, "users", "resigned_at", "DATETIME")
         # 校区（2026：校区管理功能）
         add_column_if_missing(conn, "students", "campus_id", "INTEGER")
         add_column_if_missing(conn, "users", "campus_id", "INTEGER")
@@ -81,6 +83,22 @@ def main():
         for u in orphan_users:
             u.org_id = org.id
         print(f"已为 {len(orphan_users)} 个校长/教师账号设置机构")
+
+        # 存量校区负责人回填到 campus_heads 关联表（多负责人功能）
+        from app.models_campus import CampusHead
+        legacy_heads = db.query(User).filter(
+            User.role.in_([UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
+            User.campus_id.isnot(None),
+        ).all()
+        backfilled = 0
+        for u in legacy_heads:
+            if not db.query(CampusHead).filter(
+                CampusHead.campus_id == u.campus_id, CampusHead.user_id == u.id
+            ).first():
+                db.add(CampusHead(org_id=u.org_id, campus_id=u.campus_id, user_id=u.id))
+                backfilled += 1
+        if backfilled:
+            print(f"campus_heads: {backfilled} 条负责人关联已回填")
 
         # 现有业务数据归属默认机构
         for t in ["students", "subjects", "fee_records", "invoices", "refund_adjustments",

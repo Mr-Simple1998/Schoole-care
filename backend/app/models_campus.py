@@ -20,6 +20,22 @@ class Campus(Base):
     status = Column(Boolean, default=True)              # 启用/停用
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    heads = relationship("CampusHead", back_populates="campus", cascade="all, delete-orphan")
+
+
+class CampusHead(Base):
+    """校区负责人关联表：一个校区可有多名负责人（可多选，选项含总校长）"""
+    __tablename__ = "campus_heads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True, index=True)  # 所属机构
+    campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+
+    campus = relationship("Campus", back_populates="heads")
+    user = relationship("User")
+
 
 class CampusTransaction(Base):
     """校区手工收支登记（学费收入按学生校区自动归属，这里登记非学费收入与支出）"""

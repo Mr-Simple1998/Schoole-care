@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
@@ -9,6 +11,7 @@ from ..models_subject import Subject, teacher_subjects
 from ..security import (
     hash_password, verify_password, create_access_token,
     get_current_user, get_current_principal, get_current_principal_or_head, is_head_role,
+    managed_campus_ids,
 )
 
 router = APIRouter()
@@ -52,6 +55,7 @@ class UserOut(BaseModel):
     phone: str | None
     avatar: str | None = None
     is_active: bool
+    resigned: bool = False
     campus_id: int | None = None
     campus_name: str | None = None
     subjects: list[SubjectOut] = []  # 所属学科
@@ -107,9 +111,13 @@ def register_teacher(data: UserCreate, current_user: User = Depends(get_current_
     """总校长/校区负责人创建教师账号（新增教师固定为教师角色；总校长由平台开户创建，校区负责人由总校长在校区管理页开号）"""
     if data.role != "teacher":
         raise HTTPException(status_code=400, detail="只能创建教师账号")
-    # 校区负责人/归属了校区的总校长：新建教师默认归属同一校区
+    # 校区负责人/归属了校区的总校长：新建教师默认归属同一校区；多校区负责人可在其管辖校区中选择
     if is_head_role(current_user.role) or (current_user.role == UserRole.PRINCIPAL and current_user.campus_id):
-        data.campus_id = current_user.campus_id
+        managed = managed_campus_ids(db, current_user) or set()
+        if data.campus_id in managed:
+            pass  # 使用所选校区
+        else:
+            data.campus_id = current_user.campus_id if current_user.campus_id in managed else (next(iter(managed), None))
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=400, detail="用户名已存在")
     if data.campus_id is not None:
@@ -139,13 +147,14 @@ def list_teachers(
     current_user: User = Depends(get_current_principal_or_head),
     db: Session = Depends(get_db),
 ):
-    """总校长查看本机构教师/校区负责人（可按校区筛选）；校区负责人仅见本校区教师"""
+    """总校长查看本机构教师/校区负责人（可按校区筛选）；校区负责人仅见本校区（可多校区）教师"""
     q = db.query(User).filter(
         User.role.in_([UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
         User.org_id == current_user.org_id,
     )
     if is_head_role(current_user.role):
-        q = q.filter(User.campus_id == current_user.campus_id)
+        managed = managed_campus_ids(db, current_user) or set()
+        q = q.filter(User.campus_id.in_(managed))
     elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
         q = q.filter(User.campus_id == current_user.campus_id)
     elif campus_id is not None:
@@ -155,12 +164,13 @@ def list_teachers(
 
 @router.get("/users", response_model=list[UserOut])
 def list_users(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """账号列表（总校长见机构全部；校区负责人见本校区全部；教师仅见自己）"""
+    """账号列表（总校长见机构全部；校区负责人见本校区全部（可多校区）；教师仅见自己）"""
     if current_user.role == UserRole.PRINCIPAL:
         return [_user_out(u) for u in db.query(User).filter(User.org_id == current_user.org_id).all()]
     if is_head_role(current_user.role):
+        managed = managed_campus_ids(db, current_user) or set()
         return [_user_out(u) for u in db.query(User).filter(
-            User.org_id == current_user.org_id, User.campus_id == current_user.campus_id).all()]
+            User.org_id == current_user.org_id, User.campus_id.in_(managed)).all()]
     return [_user_out(current_user)]
 
 
@@ -170,7 +180,8 @@ def delete_user(user_id: int, current_user: User = Depends(get_current_principal
     q = db.query(User).filter(User.id == user_id, User.org_id == current_user.org_id)
     if is_head_role(current_user.role):
         # 校区负责人只能停用本校区教师账号
-        q = q.filter(User.campus_id == current_user.campus_id, User.role == UserRole.TEACHER)
+        managed = managed_campus_ids(db, current_user) or set()
+        q = q.filter(User.campus_id.in_(managed), User.role == UserRole.TEACHER)
     user = q.first()
     if not user:
         raise HTTPException(status_code=404, detail="账号不存在")
@@ -182,7 +193,7 @@ def delete_user(user_id: int, current_user: User = Depends(get_current_principal
 
 @router.delete("/teachers/{user_id}")
 def delete_teacher(user_id: int, current_user: User = Depends(get_current_principal_or_head), db: Session = Depends(get_db)):
-    """总校长/校区负责人：删除本机构（本校区）教师账号。该账号名下有在读学生时禁止删除。"""
+    """总校长/校区负责人：删除本机构（本校区）教师账号。该账号名下有在读学生时禁止删除（请先办理离职，学生将自动暂存校区）。"""
     q = db.query(User).filter(
         User.id == user_id,
         User.org_id == current_user.org_id,
@@ -190,7 +201,8 @@ def delete_teacher(user_id: int, current_user: User = Depends(get_current_princi
     )
     if is_head_role(current_user.role):
         # 校区负责人只能删除本校区教师账号（不可删除校长管理号）
-        q = q.filter(User.campus_id == current_user.campus_id, User.role == UserRole.TEACHER)
+        managed = managed_campus_ids(db, current_user) or set()
+        q = q.filter(User.campus_id.in_(managed), User.role == UserRole.TEACHER)
     user = q.first()
     if not user:
         raise HTTPException(status_code=404, detail="教师账号不存在")
@@ -201,10 +213,12 @@ def delete_teacher(user_id: int, current_user: User = Depends(get_current_princi
     if student_count > 0:
         raise HTTPException(
             status_code=400,
-            detail=f"该教师名下有 {student_count} 名在读学生，请先转移或删除这些学生后再删除教师账号",
+            detail=f"该教师名下有 {student_count} 名在读学生，请先办理离职（学生自动暂存校区）或转移学生后再删除教师账号",
         )
-    # 先清理教师-学科关联，再删除账号
+    # 先清理教师-学科关联、校区负责人关联，再删除账号
     db.execute(teacher_subjects.delete().where(teacher_subjects.c.teacher_id == user.id))
+    from ..models_campus import CampusHead
+    db.query(CampusHead).filter(CampusHead.user_id == user.id).delete(synchronize_session=False)
     db.delete(user)
     db.commit()
     return {"detail": "已删除"}
@@ -212,19 +226,27 @@ def delete_teacher(user_id: int, current_user: User = Depends(get_current_princi
 
 @router.put("/users/{user_id}", response_model=UserOut)
 def update_user(user_id: int, data: UserUpdate, current_user: User = Depends(get_current_principal_or_head), db: Session = Depends(get_db)):
-    """总校长/校区负责人：编辑本机构（本校区）教师账号信息及其所属学科"""
+    """总校长/校区负责人：编辑本机构（本校区）教师账号信息及其所属学科；重新启用离职账号时清除离职标记"""
     q = db.query(User).filter(User.id == user_id, User.org_id == current_user.org_id)
     if is_head_role(current_user.role):
         # 校区负责人只能编辑本校区教师账号（不可编辑校长管理号）
-        q = q.filter(User.campus_id == current_user.campus_id, User.role == UserRole.TEACHER)
+        managed = managed_campus_ids(db, current_user) or set()
+        q = q.filter(User.campus_id.in_(managed), User.role == UserRole.TEACHER)
     user = q.first()
     if not user:
         raise HTTPException(status_code=404, detail="账号不存在")
     payload = data.model_dump(exclude_unset=True, exclude={"subject_ids"})
     if is_head_role(current_user.role):
-        payload["campus_id"] = current_user.campus_id
+        # 校区负责人可把教师调整到其管辖的任一校区（多校区时不再强制主校区）
+        managed = managed_campus_ids(db, current_user) or set()
+        if "campus_id" in payload and payload["campus_id"] not in managed:
+            raise HTTPException(status_code=400, detail="只能设置教师到您管辖的校区")
     for k, v in payload.items():
         setattr(user, k, v)
+    # 重新启用：清除离职标记（离职数据仍保留在原校区）
+    if payload.get("is_active") is True:
+        user.resigned = False
+        user.resigned_at = None
     if "subject_ids" in data.model_dump(exclude_unset=True):
         _set_teacher_subjects(db, user, data.subject_ids)
     db.commit()
@@ -247,13 +269,69 @@ def reset_teacher_password(
     q = db.query(User).filter(User.id == user_id, User.org_id == current_user.org_id)
     if is_head_role(current_user.role):
         # 校区负责人只能重置本校区教师密码（不可重置校长管理号）
-        q = q.filter(User.campus_id == current_user.campus_id, User.role == UserRole.TEACHER)
+        managed = managed_campus_ids(db, current_user) or set()
+        q = q.filter(User.campus_id.in_(managed), User.role == UserRole.TEACHER)
     user = q.first()
     if not user:
         raise HTTPException(status_code=404, detail="账号不存在")
     user.password_hash = hash_password(data.password)
     db.commit()
     return {"detail": "密码已重置"}
+
+
+# ========== 离职处理（教师 / 校区负责人） ==========
+
+@router.post("/users/{user_id}/resign")
+def resign_user(user_id: int, current_user: User = Depends(get_current_principal_or_head), db: Session = Depends(get_db)):
+    """办理离职：停用账号并标记离职；其名下所有学生数据全部保留，暂存至学生所属校区（teacher_id 置空），
+    由总校长/校区负责人后续分配给其他教师或新账号。
+
+    - 校区负责人离职：校区全部数据（学生/教师/收支/收费记录）原样保留，总校长可重新建号后自动接管
+    - 教师离职：名下学生暂存至校区负责人处（校区可见、可再分配）
+    """
+    q = db.query(User).filter(User.id == user_id, User.org_id == current_user.org_id)
+    if is_head_role(current_user.role):
+        # 校区负责人只能办理本校区教师离职（负责人离职由总校长在“校区管理-负责人”中办理）
+        managed = managed_campus_ids(db, current_user) or set()
+        q = q.filter(User.campus_id.in_(managed), User.role == UserRole.TEACHER)
+    user = q.first()
+    if not user:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    if user.role == UserRole.PRINCIPAL:
+        raise HTTPException(status_code=400, detail="总校长为机构所有者，不可办理离职")
+    if user.role == UserRole.PLATFORM:
+        raise HTTPException(status_code=400, detail="平台管理员不可办理离职")
+
+    org_id = current_user.org_id
+    # 1. 停用账号并标记离职
+    user.is_active = False
+    user.resigned = True
+    user.resigned_at = datetime.utcnow()
+    # 2. 若是校区负责人：移除其所有校区负责人关联（校区数据保留），不再担任负责人时降级为教师
+    from ..models_campus import CampusHead
+    head_rows = db.query(CampusHead).filter(
+        CampusHead.org_id == org_id, CampusHead.user_id == user.id
+    ).delete(synchronize_session=False)
+    if head_rows and is_head_role(user.role):
+        user.role = UserRole.TEACHER
+    # 3. 名下学生暂存至其所属校区（数据保留，教师置空）
+    students = db.query(Student).filter(
+        Student.org_id == org_id, Student.teacher_id == user.id, Student.deleted == False  # noqa: E712
+    ).all()
+    for s in students:
+        s.teacher_id = None
+        if s.campus_id is None and user.campus_id:
+            s.campus_id = user.campus_id  # 未归属校区的学生暂存到教师所属校区
+    db.commit()
+    return {
+        "detail": "离职办理完成",
+        "user_id": user.id,
+        "name": user.name,
+        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        "students_transferred": len(students),
+        "head_links_removed": head_rows,
+        "tip": "所有学生数据已保留并暂存至所在校区（负责人可见），可分配给其他教师或新建账号后分配。",
+    }
 
 
 # ========== 微信小程序登录（本地开发模式） ==========

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
-from .database import Base, engine
+from .database import Base, engine, SessionLocal
 
 # 导入所有模型以注册到 Base（models_income/learning/points 已通过 models 传递）
 from . import models  # noqa: F401
@@ -19,6 +19,64 @@ from .routers import auth, students, income, learning, points, dashboard, subjec
 
 # 创建数据表
 Base.metadata.create_all(bind=engine)
+
+
+def _ensure_schema():
+    """轻量自动迁移（SQLite）：为存量库补充新增字段，并把存量单负责人回填到 campus_heads 关联表。
+
+    create_all 只会新建缺失的表，不会给既有表加列；这里做幂等的 ALTER/回填，
+    保证老数据库升级后功能可用（正式迁移可继续使用 migrate.py）。
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if engine.dialect.name != "sqlite" or "users" not in insp.get_table_names():
+        return
+    try:
+        cols = {c["name"] for c in insp.get_columns("users")}
+        with engine.begin() as conn:
+            if "resigned" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN resigned BOOLEAN DEFAULT 0"))
+            cols = {c["name"] for c in inspect(engine).get_columns("users")}
+            if "resigned_at" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN resigned_at DATETIME"))
+            if "campus_heads" not in insp.get_table_names():
+                conn.execute(text("""
+                    CREATE TABLE campus_heads (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        org_id INTEGER,
+                        campus_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        assigned_at DATETIME
+                    )
+                """))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campus_heads_campus_id ON campus_heads (campus_id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campus_heads_user_id ON campus_heads (user_id)"))
+        # 回填：存量校区负责人（sub_principal / campus_head 且已归属校区）写入关联表
+        from sqlalchemy.orm import Session
+        from .models import User, UserRole
+        from .models_campus import CampusHead
+
+        db: Session = SessionLocal()
+        try:
+            legacy = db.query(User).filter(
+                User.role.in_([UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
+                User.campus_id.isnot(None),
+            ).all()
+            for u in legacy:
+                exists = db.query(CampusHead).filter(
+                    CampusHead.campus_id == u.campus_id, CampusHead.user_id == u.id
+                ).first()
+                if not exists:
+                    db.add(CampusHead(org_id=u.org_id, campus_id=u.campus_id, user_id=u.id))
+            db.commit()
+        finally:
+            db.close()
+    except Exception as exc:  # 迁移失败不阻断启动（新库本身无需迁移）
+        print("自动迁移跳过：", exc)
+
+
+_ensure_schema()
 
 app = FastAPI(
     title=settings.app_name,
