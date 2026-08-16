@@ -41,6 +41,8 @@ def main():
         add_column_if_missing(conn, "users", "avatar", "VARCHAR(255)")
         add_column_if_missing(conn, "users", "resigned", "BOOLEAN DEFAULT 0")
         add_column_if_missing(conn, "users", "resigned_at", "DATETIME")
+        add_column_if_missing(conn, "users", "work_start_time", "VARCHAR(10)")
+        add_column_if_missing(conn, "users", "work_end_time", "VARCHAR(10)")
         # 校区（2026：校区管理功能）
         add_column_if_missing(conn, "students", "campus_id", "INTEGER")
         add_column_if_missing(conn, "users", "campus_id", "INTEGER")

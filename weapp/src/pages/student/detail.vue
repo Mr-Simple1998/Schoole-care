@@ -92,7 +92,8 @@
 		<view class="card">
 			<view class="card-title"><text class="bar"></text>功能</view>
 			<view class="quick-grid">
-				<view class="quick-item" @click="openAttend"><text>考勤打卡</text></view>
+				<!-- 学生分开管理：各角色只能给自己负责的学生打卡 -->
+				<view class="quick-item" v-if="student.teacher_id === store.user.id" @click="openAttend"><text>考勤打卡</text></view>
 				<view class="quick-item" @click="openScore"><text>成绩</text></view>
 				<view class="quick-item" @click="openHomework"><text>作业</text></view>
 				<view class="quick-item" @click="togglePerf"><text>课堂表现</text></view>

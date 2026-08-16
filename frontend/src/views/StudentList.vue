@@ -114,7 +114,8 @@
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="$router.push(`/student/${row.id}`)">学习档案</el-button>
-            <el-button size="small" type="success" link @click="openAttendance(row)">打卡</el-button>
+            <!-- 学生分开管理：各角色只能给自己负责的学生打卡（总校长/校区负责人/教师均可拥有自己的学生） -->
+            <el-button v-if="row.teacher_id === userStore.user?.id" size="small" type="success" link @click="openAttendance(row)">打卡</el-button>
             <el-button size="small" link @click="openDialog(row)">编辑</el-button>
             <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
           </template>
@@ -162,7 +163,7 @@
             </el-option-group>
           </el-select>
         </el-form-item>
-        <el-form-item label="所属校区">
+        <el-form-item label="所属校区" v-if="userStore.isPrincipal || userStore.isSubPrincipal">
           <el-select v-model="form.campus_id" placeholder="选择校区（可选）" clearable style="width: 100%" @change="onCampusChange">
             <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
@@ -172,7 +173,7 @@
             <el-option
               v-for="t in teacherOptions"
               :key="t.id"
-              :label="`${t.name}（${t.username}）${t.role === 'sub_principal' || t.role === 'campus_head' ? '· 校区负责人' : ''}`"
+              :label="`${t.name}（${t.username}）${t.role === 'sub_principal' || t.role === 'campus_head' ? '· 校区负责人' : t.role === 'principal' ? '· 总校长' : ''}`"
               :value="t.id"
             />
           </el-select>

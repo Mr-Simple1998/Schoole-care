@@ -11,17 +11,30 @@ function genId() {
 
 export function getWxCode() {
 	return new Promise((resolve) => {
-		uni.login({
-			provider: 'weixin',
-			success: (res) => {
-				if (res && res.code) {
-					resolve(res.code);
-				} else {
-					resolve(getLocalSim());
-				}
-			},
-			fail: () => resolve(getLocalSim())
-		});
+		let settled = false;
+		const fallback = () => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			resolve(getLocalSim());
+		};
+		// 开发者工具（真实 AppID 但无权限/未登录）下 uni.login 可能既不 success 也不 fail，
+		// 加超时兜底，避免登录卡住无反应
+		const timer = setTimeout(fallback, 2000);
+		try {
+			uni.login({
+				provider: 'weixin',
+				success: (res) => {
+					if (settled) return;
+					settled = true;
+					clearTimeout(timer);
+					resolve(res && res.code ? res.code : getLocalSim());
+				},
+				fail: () => fallback()
+			});
+		} catch (e) {
+			fallback();
+		}
 	});
 }
 

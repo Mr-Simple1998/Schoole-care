@@ -58,6 +58,8 @@ class UserOut(BaseModel):
     resigned: bool = False
     campus_id: int | None = None
     campus_name: str | None = None
+    work_start_time: str | None = None
+    work_end_time: str | None = None
     subjects: list[SubjectOut] = []  # 所属学科
 
     class Config:
@@ -113,11 +115,17 @@ def register_teacher(data: UserCreate, current_user: User = Depends(get_current_
         raise HTTPException(status_code=400, detail="只能创建教师账号")
     # 校区负责人/归属了校区的总校长：新建教师默认归属同一校区；多校区负责人可在其管辖校区中选择
     if is_head_role(current_user.role) or (current_user.role == UserRole.PRINCIPAL and current_user.campus_id):
-        managed = managed_campus_ids(db, current_user) or set()
-        if data.campus_id in managed:
-            pass  # 使用所选校区
+        if current_user.role == UserRole.PRINCIPAL:
+            # 总校长管辖全部校区：保留所选校区（由下方校验是否属于本机构）；未指定时默认其归属校区，
+            # 避免新建教师无校区归属导致其新增学生在校长/总校长端不可见
+            if data.campus_id is None:
+                data.campus_id = current_user.campus_id
         else:
-            data.campus_id = current_user.campus_id if current_user.campus_id in managed else (next(iter(managed), None))
+            managed = managed_campus_ids(db, current_user) or set()
+            if data.campus_id in managed:
+                pass  # 使用所选校区
+            else:
+                data.campus_id = current_user.campus_id if current_user.campus_id in managed else (next(iter(managed), None))
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=400, detail="用户名已存在")
     if data.campus_id is not None:
@@ -147,9 +155,10 @@ def list_teachers(
     current_user: User = Depends(get_current_principal_or_head),
     db: Session = Depends(get_db),
 ):
-    """总校长查看本机构教师/校区负责人（可按校区筛选）；校区负责人仅见本校区（可多校区）教师"""
+    """总校长查看本机构教师/校区负责人（可按校区筛选）；校区负责人仅见本校区（可多校区）教师。
+    含总校长本人：总校长/校区负责人也可以拥有自己的学生，可作为学生的负责教师被选择。"""
     q = db.query(User).filter(
-        User.role.in_([UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
+        User.role.in_([UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD, UserRole.PRINCIPAL]),
         User.org_id == current_user.org_id,
     )
     if is_head_role(current_user.role):
@@ -256,6 +265,37 @@ def update_user(user_id: int, data: UserUpdate, current_user: User = Depends(get
 
 class ResetPassword(BaseModel):
     password: str = Query(..., min_length=6, description="新密码")
+
+
+class WorkTimeUpdate(BaseModel):
+    """设置教师上下班打卡时间（HH:MM）"""
+    work_start_time: str | None = None
+    work_end_time: str | None = None
+
+
+@router.put("/users/{user_id}/work-time", response_model=UserOut)
+def update_teacher_work_time(
+    user_id: int,
+    data: WorkTimeUpdate,
+    current_user: User = Depends(get_current_principal_or_head),
+    db: Session = Depends(get_db),
+):
+    """总校长/校区负责人：设置教师的上下班打卡时间，用于教师工作台打卡与月度考勤汇总标记"""
+    q = db.query(User).filter(User.id == user_id, User.org_id == current_user.org_id)
+    if is_head_role(current_user.role):
+        # 校区负责人只能设置本校区教师
+        managed = managed_campus_ids(db, current_user) or set()
+        q = q.filter(User.campus_id.in_(managed), User.role == UserRole.TEACHER)
+    user = q.first()
+    if not user:
+        raise HTTPException(status_code=404, detail="教师账号不存在")
+    if data.work_start_time is not None:
+        user.work_start_time = data.work_start_time.strip() or None
+    if data.work_end_time is not None:
+        user.work_end_time = data.work_end_time.strip() or None
+    db.commit()
+    db.refresh(user)
+    return _user_out(user)
 
 
 @router.put("/users/{user_id}/reset-password")

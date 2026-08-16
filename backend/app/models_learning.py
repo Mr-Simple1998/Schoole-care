@@ -42,6 +42,23 @@ class Attendance(Base):
     student = relationship("Student", back_populates="attendances")
 
 
+class TeacherAttendance(Base):
+    """教师上下班打卡记录（校区负责人设置上下班时间后，教师在工作台打卡）"""
+    __tablename__ = "teacher_attendances"
+
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True, index=True)  # 所属机构
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)  # 教师账号
+    date = Column(Date, nullable=False)
+    time_in = Column(String(10), nullable=True)      # 上班打卡时间 HH:MM
+    time_out = Column(String(10), nullable=True)     # 下班打卡时间 HH:MM
+    status = Column(String(20), default="正常")      # 正常/迟到/早退/缺勤（汇总时整体标记）
+    remark = Column(String(255), nullable=True)
+    created_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+
+
 class Homework(Base):
     """作业管理"""
     __tablename__ = "homework"

@@ -54,12 +54,15 @@
 						<text>@{{ t.username }}</text>
 						<text v-if="subjectText(t)" class="sub-divider">·</text>
 						<text v-if="subjectText(t)" class="sub-subjects">{{ subjectText(t) }}</text>
+						<text v-if="t.work_start_time" class="sub-divider">·</text>
+						<text v-if="t.work_start_time" class="sub-schedule">上下班 {{ t.work_start_time }}-{{ t.work_end_time || '未设' }}</text>
 					</view>
 				</view>
 				<view class="ir-right">
 					<text class="tag" :class="t.resigned ? 'tag-danger' : (t.is_active ? 'tag-success' : 'tag-danger')">
 						<text class="dot" :class="t.resigned ? 'dot-red' : (t.is_active ? 'dot-green' : 'dot-red')"></text>{{ t.resigned ? '已离职' : (t.is_active ? '启用' : '停用') }}
 					</text>
+					<text v-if="t.role === 'teacher'" class="schedule" @click="openSchedule(t)">上下班</text>
 					<text v-if="t.role === 'teacher' && t.is_active" class="resign" @click="doResign(t)">离职</text>
 					<text class="del" @click="doDelete(t)">删除</text>
 				</view>
@@ -79,18 +82,46 @@
 				</view>
 			</view>
 		</view>
+
+		<!-- 设置教师上下班打卡时间 -->
+		<view class="mask" v-if="showSchedule" @click="showSchedule=false">
+			<view class="dialog" @click.stop>
+				<view class="dialog-title">设置上下班时间</view>
+				<view class="field"><text class="label">教师：{{ scheduleTarget && scheduleTarget.name }}</text></view>
+				<view class="field">
+					<text class="label">上班时间</text>
+					<picker mode="time" :value="scheduleForm.work_start_time" @change="e => scheduleForm.work_start_time = e.detail.value">
+						<view class="input picker-box">{{ scheduleForm.work_start_time || '请选择' }}<text class="arrow">›</text></view>
+					</picker>
+				</view>
+				<view class="field">
+					<text class="label">下班时间</text>
+					<picker mode="time" :value="scheduleForm.work_end_time" @change="e => scheduleForm.work_end_time = e.detail.value">
+						<view class="input picker-box">{{ scheduleForm.work_end_time || '请选择' }}<text class="arrow">›</text></view>
+					</picker>
+				</view>
+				<view class="tip">设置后，教师可在工作台进行上下班打卡；上班晚于设定时间会在月度考勤汇总中标记为「迟到」。</view>
+				<view class="dialog-btns">
+					<button class="btn-cancel" @click="showSchedule=false">取消</button>
+					<button class="btn-primary" @click="doSaveSchedule">保存</button>
+				</view>
+			</view>
+		</view>
 	</view>
 </template>
 
 <script>
-import { get, post, del } from '../../utils/request';
+import { get, post, del, put } from '../../utils/request';
 
 export default {
 	data() {
 		return {
 			teachers: [],
 			showAdd: false,
-			form: { name: '', username: '', password: '' }
+			form: { name: '', username: '', password: '' },
+			showSchedule: false,
+			scheduleTarget: null,
+			scheduleForm: { work_start_time: '', work_end_time: '' }
 		};
 	},
 	computed: {
@@ -159,6 +190,25 @@ export default {
 				}
 			});
 		},
+		openSchedule(t) {
+			this.scheduleTarget = t;
+			this.scheduleForm = {
+				work_start_time: t.work_start_time || '',
+				work_end_time: t.work_end_time || ''
+			};
+			this.showSchedule = true;
+		},
+		async doSaveSchedule() {
+			try {
+				await put('/auth/users/' + this.scheduleTarget.id + '/work-time', {
+					work_start_time: this.scheduleForm.work_start_time || null,
+					work_end_time: this.scheduleForm.work_end_time || null
+				});
+				uni.showToast({ title: '已保存', icon: 'success' });
+				this.showSchedule = false;
+				this.loadTeachers();
+			} catch (e) {}
+		},
 		doResign(t) {
 			uni.showModal({
 				title: '教师离职',
@@ -188,6 +238,11 @@ export default {
 .sub-subjects { color: #10b981; }
 .del { color: #f56c6c; margin-left: 8rpx; font-size: 26rpx; }
 .resign { color: #e6a23c; margin-left: 8rpx; font-size: 26rpx; }
+.schedule { color: #3b82f6; margin-left: 8rpx; font-size: 26rpx; }
+.sub-schedule { color: #3b82f6; }
+.picker-box { display: flex; align-items: center; justify-content: space-between; }
+.arrow { color: #c0c4cc; font-size: 32rpx; }
+.tip { font-size: 22rpx; color: #909399; margin-bottom: 16rpx; line-height: 1.5; }
 .empty { text-align: center; padding: 30rpx 0; }
 .mask { position: fixed; left:0; top:0; right:0; bottom:0; background: rgba(0,0,0,0.45); z-index:99; display:flex; align-items:center; justify-content:center; }
 .dialog { width: 80%; background:#fff; border-radius:16rpx; padding:36rpx 32rpx; }

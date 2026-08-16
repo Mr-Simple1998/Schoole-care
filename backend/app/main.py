@@ -40,6 +40,11 @@ def _ensure_schema():
             cols = {c["name"] for c in inspect(engine).get_columns("users")}
             if "resigned_at" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN resigned_at DATETIME"))
+            cols = {c["name"] for c in inspect(engine).get_columns("users")}
+            if "work_start_time" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN work_start_time VARCHAR(10)"))
+            if "work_end_time" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN work_end_time VARCHAR(10)"))
             if "campus_heads" not in insp.get_table_names():
                 conn.execute(text("""
                     CREATE TABLE campus_heads (

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Student, User, UserRole
-from ..models_learning import Score, Attendance, Homework, ClassPerformance
+from ..models_learning import Score, Attendance, Homework, ClassPerformance, TeacherAttendance
 from ..models_income import FeeRecord
 from ..models_subject import StudentSubject, Subject
 from ..security import get_current_user, is_head_role, managed_campus_ids
@@ -46,6 +46,21 @@ def _check_student_teacher(db, student_id, current_user):
         if not student or student.campus_id != current_user.campus_id:
             raise HTTPException(status_code=403, detail="只能操作本校区学生")
     return
+
+
+def _check_student_own(db, student_id, current_user):
+    """打卡：总校长/校区负责人/教师的学生分开，各角色只能给自己负责的学生打卡
+    （teacher_id == 当前用户；总校长和校区负责人也可以拥有自己的学生）"""
+    student = db.query(Student).filter(
+        Student.id == student_id,
+        Student.org_id == current_user.org_id,
+        Student.deleted == False,  # noqa: E712
+    ).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="学生不存在")
+    if student.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="只能给自己负责的学生打卡")
+    return student
 
 
 # ---------- 成绩 ----------
@@ -154,7 +169,7 @@ def _apply_duration_expire(link, first_date):
 
 @router.post("/attendance", response_model=AttendOut)
 def create_attendance(data: AttendCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _check_student_teacher(db, data.student_id, current_user)
+    _check_student_own(db, data.student_id, current_user)
     # 检查当天是否已打卡（同一学生+同一天+同一学科 唯一）
     existing = db.query(Attendance).filter(
         Attendance.org_id == current_user.org_id,
@@ -234,6 +249,116 @@ def list_attendance(student_id: int | None = None, current_user: User = Depends(
     if student_id:
         q = q.filter(Attendance.student_id == student_id)
     return q.order_by(Attendance.date.desc()).all()
+
+
+# ---------- 教师上下班打卡 ----------
+class TeacherClockIn(BaseModel):
+    action: str = "in"  # in=上班打卡 / out=下班打卡
+
+
+class TeacherAttendanceOut(BaseModel):
+    id: int
+    user_id: int
+    date: DateType
+    time_in: str | None
+    time_out: str | None
+    status: str
+    remark: str | None
+    work_start: str | None = None
+    work_end: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+def _teacher_day_status(time_in: str | None, time_out: str | None, work_start: str | None, work_end: str | None) -> str:
+    """按上下班时间整体标记：迟到（晚于上班时间）/ 早退（早于下班时间）/ 正常"""
+    if time_in and work_start and time_in > work_start:
+        return "迟到"
+    if time_out and work_end and time_out < work_end:
+        return "早退"
+    return "正常"
+
+
+def _teacher_attendance_out(rec, work_start: str | None, work_end: str | None) -> TeacherAttendanceOut:
+    out = TeacherAttendanceOut.model_validate(rec)
+    out.work_start = work_start
+    out.work_end = work_end
+    return out
+
+
+@router.post("/teacher-attendance", response_model=TeacherAttendanceOut)
+def teacher_clock(data: TeacherClockIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """教师工作台上下班打卡：上班未按时打卡会在月度汇总中整体标记为「迟到」"""
+    if current_user.role != UserRole.TEACHER:
+        raise HTTPException(status_code=403, detail="仅教师可进行上下班打卡")
+    today = DateType.today()
+    now = datetime.now().strftime("%H:%M")
+    rec = db.query(TeacherAttendance).filter(
+        TeacherAttendance.org_id == current_user.org_id,
+        TeacherAttendance.user_id == current_user.id,
+        TeacherAttendance.date == today,
+    ).first()
+    if not rec:
+        rec = TeacherAttendance(
+            org_id=current_user.org_id,
+            user_id=current_user.id,
+            date=today,
+            created_at=datetime.utcnow(),
+        )
+        db.add(rec)
+    if data.action == "in":
+        rec.time_in = now
+        rec.status = "迟到" if (current_user.work_start_time and now > current_user.work_start_time) else "正常"
+    elif data.action == "out":
+        rec.time_out = now
+        rec.status = _teacher_day_status(rec.time_in, rec.time_out, current_user.work_start_time, current_user.work_end_time)
+    else:
+        raise HTTPException(status_code=400, detail="action 只能为 in 或 out")
+    db.commit()
+    db.refresh(rec)
+    return _teacher_attendance_out(rec, current_user.work_start_time, current_user.work_end_time)
+
+
+@router.get("/teacher-attendance", response_model=list[TeacherAttendanceOut])
+def list_teacher_attendance(
+    month: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """教师查看自己的上下班打卡记录；校区负责人/总校长查看本校区（本机构）教师的打卡记录"""
+    q = db.query(TeacherAttendance).filter(TeacherAttendance.org_id == current_user.org_id)
+    if current_user.role == UserRole.TEACHER:
+        q = q.filter(TeacherAttendance.user_id == current_user.id)
+    elif is_head_role(current_user.role):
+        managed = managed_campus_ids(db, current_user) or set()
+        teacher_ids = [u.id for u in db.query(User).filter(
+            User.org_id == current_user.org_id,
+            User.campus_id.in_(managed),
+            User.role == UserRole.TEACHER,
+            User.resigned == False,  # noqa: E712
+        ).all()]
+        q = q.filter(TeacherAttendance.user_id.in_(teacher_ids or [0]))
+    elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
+        teacher_ids = [u.id for u in db.query(User).filter(
+            User.org_id == current_user.org_id,
+            User.campus_id == current_user.campus_id,
+            User.role == UserRole.TEACHER,
+            User.resigned == False,  # noqa: E712
+        ).all()]
+        q = q.filter(TeacherAttendance.user_id.in_(teacher_ids or [0]))
+    if month and len(month) == 7:
+        try:
+            y, m = int(month[:4]), int(month[5:7])
+            start = DateType(y, m, 1)
+            end = DateType(y + 1, 1, 1) if m == 12 else DateType(y, m + 1, 1)
+            q = q.filter(TeacherAttendance.date >= start, TeacherAttendance.date < end)
+        except ValueError:
+            pass
+    # 回填上下班时间供展示
+    user_ids = {r.user_id for r in q.all()}
+    users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
+    return [_teacher_attendance_out(r, users[r.user_id].work_start_time, users[r.user_id].work_end_time) for r in q.order_by(TeacherAttendance.date.desc()).all()]
 
 
 # ---------- 作业 ----------

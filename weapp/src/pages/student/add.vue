@@ -23,7 +23,7 @@
 				<text class="label">学校</text>
 				<input class="input" v-model="form.school" placeholder="就读学校" />
 			</view>
-			<view class="field" v-if="campuses.length">
+			<view class="field" v-if="campuses.length && !store.isTeacher">
 				<text class="label">所属校区</text>
 				<picker :range="campusLabels" @change="e => form.campus_id = campusIds[e.detail.value]">
 					<view class="input picker-box">{{ campusName || '请选择（可选）' }}<text class="arrow">›</text></view>
@@ -88,6 +88,7 @@
 
 <script>
 import { get, post } from '../../utils/request';
+import { useUserStore } from '../../stores/user';
 
 const GRADES = ['小学一年级','小学二年级','小学三年级','小学四年级','小学五年级','小学六年级','初中一年级','初中二年级','初中三年级','高中一年级','高中二年级','高中三年级'];
 const UNITS = ['天','月','年'];
@@ -95,6 +96,7 @@ const UNITS = ['天','月','年'];
 export default {
 	data() {
 		return {
+			store: useUserStore(),
 			grades: GRADES,
 			units: UNITS,
 			subjects: [],

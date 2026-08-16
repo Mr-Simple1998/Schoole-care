@@ -17,6 +17,7 @@
 | 后端 | FastAPI，端口 8000（运行中），SQLite `backend/tortoise.db` 已初始化 |
 | 前端 | Vue3 + Vite，端口 5173（运行中） |
 | 小程序 | 已 `build:mp-weixin` 构建，产物 `weapp/dist/build/mp-weixin`，已导入微信开发者工具 |
+| 本次新增 | 教师上下班打卡 · 全体学生考勤日历 · 学生打卡权限分离（详见 §8） |
 
 ---
 
@@ -54,13 +55,13 @@ C:\Users\DZY\Desktop\后台管理系统\
 │  └─ tortoise.db           # SQLite 数据库（已初始化）
 ├─ frontend\                # PC 管理端（Vue3 + Element Plus + ECharts）
 │  └─ src\
-│     ├─ views\             # 10 个页面（均已 UI 优化）
+│     ├─ views\             # 12 个页面（均已 UI 优化）
 │     ├─ layouts\MainLayout.vue
 │     ├─ stores\user.js / router\index.js / utils\request.js
 │     └─ style.css          # 全局样式 + 数据直观化工具类（见 §12）
 ├─ weapp\                   # 微信小程序（uni-app）
 │  └─ src\
-│     ├─ pages\             # 10 个页面（均已 UI 优化）
+│     ├─ pages\             # 14 个页面（均已 UI 优化）
 │     ├─ App.vue            # 全局样式（统计卡/标签/进度条/横幅等工具类）
 │     ├─ uni.scss           # 主题变量（teal #10b981）
 │     ├─ manifest.json / pages.json
@@ -125,6 +126,7 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 - **总校长**（principal）：归属校区后（`campus_id` 有值）操作范围=本校区（学生/教师/收支/收入均按本校区过滤）；未归属校区（存量）保持全校可操作；校区管理页始终可见**全部校区**概况与汇总行（只读总览），可设置校区、为各校区开/换/取消校长管理号。
 - **新增教师账号固定为 `teacher` 角色**（`/auth/register` 只允许创建教师；总校长/校长管理号由平台/总校长另行开号）。
 - 路由守卫：`/deleted-students` 仅总校长；`/platform` 仅平台管理员；`/income`、`/teachers`、`/subjects`（只读）、`/campuses` 对总校长+校区负责人开放。
+- **学生归属与打卡**：总校长/校区负责人/教师的学生按负责教师（`teacher_id`）分开；**总校长和校区负责人也可以拥有自己的学生**（可被选为负责教师，`/auth/teachers` 含总校长；未归属校区的总校长可拥有任意校区学生）。打卡（`POST /learning/attendance`）各角色**只能给自己负责的学生**打卡，PC/小程序学生管理的打卡按钮仅对自己名下学生显示。
 
 ---
 
@@ -143,6 +145,7 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 9. **学生删除**：软删除（`deleted=True`），保留收费历史；同时清除积分数据。
 10. **收入权限**：教师角色不可见机构月收入——`dashboard.py` 对 `UserRole.TEACHER` 将 `month_income` 置 0；小程序工作台「本月收入」卡片 `v-if="!store.isTeacher"` 隐藏。校区负责人/总校长可见（本校区/归属校区口径）。
 11. **新增教师固定为 teacher**：`/auth/register` 只允许 `role == "teacher"`；校区负责人（sub_principal）开号只能通过总校长在「校区管理」页操作（`POST /campuses/{id}/head`）。
+12. **打卡权限分离（学生分开管理）**：总校长/校区负责人/教师的学生分开，各角色只能给自己负责的学生打卡（`POST /learning/attendance` 校验 `teacher_id == 当前用户.id`，否则 403「只能给自己负责的学生打卡」）；总校长和校区负责人也可以拥有自己的学生（可被选为负责教师），此时同样只能给名下学生打卡。成绩/作业/课堂表现仍按原角色数据范围（教师=自己负责；校区负责人/总校长=本校区）。
 
 ---
 
@@ -170,11 +173,17 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 | `/campuses` | 校区管理（总校长全校只读总览 + 校区设置/负责人开号；负责人仅本校区） |
 | `/platform` | 机构开户管理（平台） |
 | `/deleted-students` | 已删除学生（仅总校长，概览 + 语义化列表） |
+| `/student-attendance` | 全体学生考勤日历（工作台「进入日历」入口；按学生×日期查看月度打卡，行内可打卡） |
 
 ---
 
 ## 8. 近期改动记录
 
+- **2026-08-16 · 教师上下班打卡 + 全体学生考勤日历 + 学生打卡权限分离**：
+  - **教师上下班打卡**：新增 `TeacherAttendance` 表与 `users.work_start_time/work_end_time` 字段（启动 `_ensure_schema` 自动建表/加列，`migrate.py` 同步）；教师在 PC/小程序工作台进行上班/下班打卡（`POST /learning/teacher-attendance`）；校区负责人在教师管理页设置上下班时间（PC「上下班」按钮 / 小程序教师列表「上下班」入口，`PUT /auth/users/{id}/work-time`）；月度考勤汇总（`GET /dashboard/attendance-summary`）按排班工作日计算，未打卡标记「缺勤」、晚于上班标记「迟到」、早于下班标记「早退」，校区负责人查看本校区教师汇总、教师查看自己汇总、总校长不展示。
+  - **全体学生考勤日历**：后端 `GET /dashboard/attendance-summary?month=YYYY-MM` 返回学生×日期考勤明细；PC 工作台新增「本月学生考勤（日历）」卡片（`给学生打卡` 对话框 + `进入日历`）+ 独立页 `/student-attendance`；小程序工作台新增「📅 查看日历」入口 + 注册 `pages/student/attendance` 全体学生考勤日历页（每行一名学生、每列一天、彩色圆点标记 正常/迟到/缺勤/请假/早退/未记录），学生列表「考勤」按钮也可进入。
+  - **学生分开管理（打卡权限分离）**：总校长/校区负责人/教师的学生按负责教师（`teacher_id`）分开；总校长和校区负责人也可以拥有自己的学生（`/auth/teachers` 增加总校长可选为负责教师；`students.py` 同校区校验放宽：负责教师未归属校区时不受限）。**打卡接口只允许给自己负责的学生打卡**（`learning.py` 新增 `_check_student_own`，`POST /learning/attendance` 校验 `teacher_id == 当前用户`），PC 学生列表/档案、小程序学生列表/详情中的打卡按钮仅对自己负责的学生显示。
+  - 小程序登录 `weapp/src/utils/openid.js` 增加 2 秒超时兜底（开发者工具 `uni.login` 不回调时不再卡死）。
 - **2026-08-16 · 平台超级管理员 PC/小程序界面一致**：
   - 小程序新增「机构开户管理」页（`weapp/src/pages/platform/platform.vue`，对应 PC `/platform`）：机构列表（校长账号/计费/交费金额/到期状态/启停用/编辑/续费/流水/重置密码）+ 开户流水统计（总金额/按机构汇总/待收款·已到期），全部复用后端 `/api/platform/*` 接口。
   - admin 在小程序登录后 `uni.reLaunch` **直达**机构开户管理页（隐藏 工作台/学生/我的 tab），与 PC 端一致；平台页底部提供退出登录。

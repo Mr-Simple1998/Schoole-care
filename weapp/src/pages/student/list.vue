@@ -48,6 +48,7 @@
 
 		<view class="search-bar">
 			<input class="search-input" v-model="keyword" placeholder="搜索姓名/学号" @input="filterList" />
+			<button v-if="store.isTeacher" class="btn-ghost att-btn" @click="goAttendance">考勤</button>
 			<button class="btn-primary add-btn" @click="goAdd">新增</button>
 		</view>
 
@@ -74,7 +75,8 @@
 					<text class="sub-label">科目</text>
 					<text v-for="sub in s.subjects" :key="sub.id" class="sub-tag">{{ sub.name }}</text>
 				</view>
-				<button class="btn-primary attend-btn" @click="openAttend(s)">打卡</button>
+				<!-- 学生分开管理：各角色只能给自己负责的学生打卡（总校长/校区负责人/教师均可拥有自己的学生） -->
+				<button v-if="s.teacher_id === store.user.id" class="btn-primary attend-btn" @click="openAttend(s)">打卡</button>
 			</view>
 		</view>
 		<view v-else class="text-muted empty">暂无学生</view>
@@ -165,6 +167,9 @@ export default {
 		goAdd() {
 			uni.navigateTo({ url: '/pages/student/add' });
 		},
+		goAttendance() {
+			uni.navigateTo({ url: '/pages/student/attendance' });
+		},
 		goPlatform() {
 			uni.navigateTo({ url: '/pages/platform/platform' });
 		},
@@ -218,6 +223,14 @@ export default {
 	font-size: 26rpx;
 }
 .add-btn { margin: 0; font-size: 26rpx; }
+.btn-ghost {
+	background: #fff;
+	color: #10b981;
+	border: 1rpx solid #10b981;
+	border-radius: 12rpx;
+	font-size: 26rpx;
+}
+.att-btn { margin: 0 12rpx 0 0; }
 .student-item { margin: 16rpx 20rpx; }
 .avatar {
 	width: 80rpx;

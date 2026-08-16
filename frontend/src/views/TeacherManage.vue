@@ -98,10 +98,11 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="380">
+        <el-table-column label="操作" width="450">
           <template #default="{ row }">
             <template v-if="row.role !== 'principal' && !(userStore.isSubPrincipal && row.role !== 'teacher')">
               <el-button size="small" link type="primary" @click="openEditDialog(row)">编辑学科</el-button>
+              <el-button v-if="row.role === 'teacher'" size="small" link type="primary" @click="openWorkTime(row)">上下班</el-button>
               <el-button size="small" link type="warning" @click="openResetPwd(row)">重置密码</el-button>
               <el-button v-if="row.is_active" size="small" link type="warning" @click="handleToggle(row, false)">停用</el-button>
               <el-button v-else size="small" link type="success" @click="handleToggle(row, true)">重新启用</el-button>
@@ -195,6 +196,24 @@
         <el-button type="warning" @click="handleResetPwd">确认重置</el-button>
       </template>
     </el-dialog>
+
+    <!-- 设置教师上下班打卡时间 -->
+    <el-dialog v-model="workTimeVisible" title="设置上下班打卡时间" width="460px">
+      <div style="margin-bottom: 12px">教师：<b>{{ workTimeTarget?.name }}</b>（{{ workTimeTarget?.username }}）</div>
+      <el-form label-width="90px">
+        <el-form-item label="上班时间">
+          <el-time-picker v-model="workTimeForm.work_start_time" placeholder="选择上班时间" format="HH:mm" value-format="HH:mm" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="下班时间">
+          <el-time-picker v-model="workTimeForm.work_end_time" placeholder="选择下班时间" format="HH:mm" value-format="HH:mm" style="width: 100%" />
+        </el-form-item>
+      </el-form>
+      <div class="tip-text">设置后，教师可在工作台进行上下班打卡；上班晚于设定时间会在月度考勤汇总中标记为「迟到」。</div>
+      <template #footer>
+        <el-button @click="workTimeVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSaveWorkTime">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -215,11 +234,14 @@ const filterCampusId = ref(null)
 const dialogVisible = ref(false)
 const editVisible = ref(false)
 const pwdVisible = ref(false)
+const workTimeVisible = ref(false)
 const editTarget = ref(null)
 const pwdTarget = ref(null)
+const workTimeTarget = ref(null)
 const editSubjectIds = ref([])
 const editCampusId = ref(null)
 const pwdForm = reactive({ password: '' })
+const workTimeForm = reactive({ work_start_time: '', work_end_time: '' })
 const saving = ref(false)
 const formRef = ref()
 
@@ -384,6 +406,28 @@ async function handleResetPwd() {
   await request.put(`/auth/users/${pwdTarget.value.id}/reset-password`, { password: pwdForm.password })
   ElMessage.success('密码已重置')
   pwdVisible.value = false
+}
+
+function openWorkTime(row) {
+  workTimeTarget.value = row
+  workTimeForm.work_start_time = row.work_start_time || ''
+  workTimeForm.work_end_time = row.work_end_time || ''
+  workTimeVisible.value = true
+}
+
+async function handleSaveWorkTime() {
+  saving.value = true
+  try {
+    await request.put(`/auth/users/${workTimeTarget.value.id}/work-time`, {
+      work_start_time: workTimeForm.work_start_time || null,
+      work_end_time: workTimeForm.work_end_time || null,
+    })
+    ElMessage.success('上下班时间已保存')
+    workTimeVisible.value = false
+    loadTeachers()
+  } finally {
+    saving.value = false
+  }
 }
 
 onMounted(() => {

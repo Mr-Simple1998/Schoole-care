@@ -82,6 +82,8 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     resigned = Column(Boolean, default=False)          # 是否已离职（离职后账号停用，数据保留）
     resigned_at = Column(DateTime, nullable=True)      # 离职时间
+    work_start_time = Column(String(10), nullable=True)  # 上班打卡时间 HH:MM（校区负责人设置，用于教师打卡与考勤汇总）
+    work_end_time = Column(String(10), nullable=True)    # 下班打卡时间 HH:MM
     created_at = Column(DateTime, default=datetime.utcnow)
 
     organization = relationship("Organization", back_populates="users")

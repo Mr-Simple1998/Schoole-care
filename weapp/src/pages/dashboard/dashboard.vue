@@ -105,6 +105,52 @@
 				</view>
 			</view>
 
+			<!-- 教师上下班打卡（教师端） -->
+			<view class="card" v-if="store.isTeacher">
+				<view class="card-title"><text class="bar"></text>教师打卡</view>
+				<view class="clock-box">
+					<view class="clock-info">
+						<text class="clock-time">{{ myClock && myClock.time_in ? '上班 ' + myClock.time_in : '今日未打卡' }}</text>
+						<text class="clock-sub" v-if="myClock && myClock.time_out">下班 {{ myClock.time_out }}</text>
+						<text v-if="myClock" class="tag" :class="myClock.status === '正常' ? 'tag-success' : 'tag-warn'">{{ myClock.status }}</text>
+					</view>
+					<view class="clock-btns">
+						<button class="btn-primary clock-btn" :loading="clockLoading" @click="doClock('in')">上班打卡</button>
+						<button class="btn-primary clock-btn" :loading="clockLoading" @click="doClock('out')">下班打卡</button>
+					</view>
+				</view>
+				<view class="clock-schedule" v-if="myClock && (myClock.work_start || myClock.work_end)">
+					规定上下班：{{ myClock.work_start || '未设' }} — {{ myClock.work_end || '未设' }}
+				</view>
+			</view>
+
+			<!-- 本月学生考勤 · 查看日历（仅教师；点开查看全体学生本月打卡情况） -->
+			<view class="card" v-if="store.isTeacher">
+				<view class="card-title"><text class="bar"></text>本月学生考勤</view>
+				<view class="cal-entry" @click="goAttendanceCalendar">
+					<view class="cal-entry-info">
+						<text class="cal-entry-title">📅 查看日历</text>
+						<text class="cal-entry-sub">查看全体学生本月打卡情况</text>
+					</view>
+					<text class="cal-arrow">›</text>
+				</view>
+			</view>
+
+			<!-- 本月教师考勤汇总（仅校区负责人） -->
+			<view class="card" v-if="store.isSubPrincipal && attendanceSummary.teachers && attendanceSummary.teachers.length">
+				<view class="card-title"><text class="bar"></text>本月教师考勤汇总</view>
+				<view v-for="t in attendanceSummary.teachers" :key="t.user_id" class="info-row">
+					<view class="ir-left">
+						<view class="ir-title">{{ t.teacher_name }}<text v-if="t.work_start" class="text-muted">（{{ t.work_start }}-{{ t.work_end || '未设' }}）</text></view>
+						<view class="ir-sub">正常 {{ t.normal }} · 迟到 {{ t.late }} · 早退 {{ t.early }} · 缺勤 {{ t.absent }}</view>
+					</view>
+					<view class="ir-right">
+						<text v-if="t.late || t.absent" class="tag tag-warn">迟到 {{ t.late }} · 缺勤 {{ t.absent }}</text>
+						<text v-else class="tag tag-success">正常</text>
+					</view>
+				</view>
+			</view>
+
 			<!-- 到期提醒 -->
 			<view class="card">
 				<view class="card-title"><text class="bar"></text>费用 / 课时到期提醒</view>
@@ -141,7 +187,7 @@
 
 <script>
 import { useUserStore } from '../../stores/user';
-import { get } from '../../utils/request';
+import { get, post } from '../../utils/request';
 
 export default {
 	data() {
@@ -149,7 +195,10 @@ export default {
 			store: useUserStore(),
 			overview: {},
 			organizations: [],
-			platOverview: {}
+			platOverview: {},
+			attendanceSummary: {},
+			myClock: null,
+			clockLoading: false
 		};
 	},
 	computed: {
@@ -183,6 +232,12 @@ export default {
 			return;
 		}
 		this.loadOverview();
+		if (!this.store.isPrincipal) {
+			this.loadAttendanceSummary();
+		}
+		if (this.store.isTeacher) {
+			this.loadTeacherClock();
+		}
 	},
 	methods: {
 		fmt(n) {
@@ -193,6 +248,29 @@ export default {
 				this.overview = await get('/dashboard/overview');
 			} catch (e) {}
 		},
+		async loadAttendanceSummary() {
+			try {
+				this.attendanceSummary = await get('/dashboard/attendance-summary');
+			} catch (e) {}
+		},
+		async loadTeacherClock() {
+			try {
+				const today = new Date().toISOString().slice(0, 10);
+				const list = await get('/learning/teacher-attendance');
+				this.myClock = list.find(x => x.date === today) || null;
+			} catch (e) {}
+		},
+		async doClock(action) {
+			this.clockLoading = true;
+			try {
+				this.myClock = await post('/learning/teacher-attendance', { action });
+				const verb = action === 'in' ? '上班' : '下班';
+				uni.showToast({ title: `${verb}打卡成功`, icon: 'success' });
+			} catch (e) {
+			} finally {
+				this.clockLoading = false;
+			}
+		},
 		async loadPlatform() {
 			try {
 				this.organizations = await get('/platform/organizations');
@@ -200,6 +278,7 @@ export default {
 			} catch (e) {}
 		},
 		goStudents() { uni.switchTab({ url: '/pages/student/list' }); },
+		goAttendanceCalendar() { uni.navigateTo({ url: '/pages/student/attendance' }); },
 		goIncome() { uni.navigateTo({ url: '/pages/income/income' }); },
 		goSubjects() { uni.navigateTo({ url: '/pages/subjects/subjects' }); },
 		goTeachers() { uni.navigateTo({ url: '/pages/teachers/teachers' }); },
@@ -236,4 +315,24 @@ export default {
 }
 .quick-item:nth-child(3n) { margin-right: 0; }
 .qi-emoji { font-size: 36rpx; }
+.clock-box { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
+.clock-info { min-width: 0; display: flex; flex-direction: column; gap: 6rpx; align-items: flex-start; }
+.clock-time { font-size: 32rpx; font-weight: 700; color: #303133; }
+.clock-sub { font-size: 24rpx; color: #909399; }
+.clock-btns { display: flex; gap: 12rpx; flex-shrink: 0; }
+.clock-btn { margin: 0; font-size: 26rpx; padding: 0 24rpx; height: 64rpx; line-height: 64rpx; }
+.clock-schedule { margin-top: 14rpx; font-size: 22rpx; color: #909399; }
+.cal-entry {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	background: #f0fdf4;
+	border: 1rpx solid #d1fae5;
+	border-radius: 12rpx;
+	padding: 28rpx 24rpx;
+}
+.cal-entry-info { display: flex; flex-direction: column; gap: 6rpx; }
+.cal-entry-title { font-size: 30rpx; font-weight: 700; color: #059669; }
+.cal-entry-sub { font-size: 24rpx; color: #6b7280; }
+.cal-arrow { font-size: 40rpx; color: #10b981; }
 </style>

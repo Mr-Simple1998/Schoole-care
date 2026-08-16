@@ -81,7 +81,8 @@
       <!-- 考勤 -->
       <el-tab-pane label="考勤打卡" name="attendance">
         <div class="tab-toolbar">
-          <el-button type="primary" size="small" :icon="Plus" @click="openAttendance">打卡</el-button>
+          <!-- 学生分开管理：各角色只能给自己负责的学生打卡 -->
+          <el-button v-if="canCheckIn" type="primary" size="small" :icon="Plus" @click="openAttendance">打卡</el-button>
         </div>
         <!-- 学科课时概览 -->
         <div v-if="student.subject_sessions && student.subject_sessions.length" class="session-overview">
@@ -274,8 +275,10 @@ import { ElMessage } from 'element-plus'
 import { Plus, Download } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import request from '@/utils/request'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
+const userStore = useUserStore()
 const studentId = route.params.id
 const loading = ref(false)
 const activeTab = ref('scores')
@@ -312,6 +315,8 @@ function hwType(s) {
 }
 
 // ===== 纯展示：概览统计与成绩配色（不改变任何业务逻辑） =====
+// 是否可给该学生打卡：总校长/校区负责人/教师的学生分开，只能给自己负责的学生打卡
+const canCheckIn = computed(() => student.value.teacher_id === userStore.user?.id)
 const totalRemaining = computed(() =>
   (student.value.subject_sessions || []).reduce((a, s) => a + (s.remaining ?? 0), 0)
 )

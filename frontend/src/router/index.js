@@ -30,6 +30,8 @@ const routes = [
       { path: 'platform', name: 'platform', component: () => import('@/views/PlatformManage.vue'), meta: { title: '机构开户管理', roles: ['platform'] } },
       // 学生学习档案（教师）
       { path: 'student/:id', name: 'student-detail', component: () => import('@/views/StudentDetail.vue'), meta: { title: '学生学习档案' } },
+      // 全体学生考勤日历（教师）
+      { path: 'student-attendance', name: 'student-attendance', component: () => import('@/views/StudentAttendance.vue'), meta: { title: '全体学生考勤' } },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: '/login' },

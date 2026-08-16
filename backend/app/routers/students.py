@@ -52,7 +52,8 @@ def _validate_teacher(db: Session, current_user: User, teacher_id: int | None, s
         raise HTTPException(status_code=400, detail="负责教师不存在或角色不合法")
     if t.resigned:
         raise HTTPException(status_code=400, detail=f"教师「{t.name}」已离职，请选择在职教师")
-    if student_campus_id is not None and t.campus_id != student_campus_id:
+    # 负责教师须与学生同校区（负责教师未归属校区时不受限，如未归属校区的总校长可拥有任意校区学生）
+    if student_campus_id is not None and t.campus_id is not None and t.campus_id != student_campus_id:
         raise HTTPException(status_code=400, detail="负责教师必须与学生同校区")
 
 
@@ -282,10 +283,13 @@ def create_student(data: StudentCreate, current_user: User = Depends(get_current
     # 教师添加的学生自动归属到该教师名下并默认归属其校区；校区负责人添加的学生默认归属其校区
     if current_user.role == UserRole.TEACHER:
         payload["teacher_id"] = current_user.id
-        if payload.get("campus_id") is None:
-            payload["campus_id"] = current_user.campus_id
-    elif is_head_role(current_user.role):
+        # 教师新增学生无需选择校区：一律自动归入教师所属校区（教师未分校区时学生保持未分校区）
         payload["campus_id"] = current_user.campus_id
+    elif is_head_role(current_user.role):
+        # 校区负责人：默认其主校区；多校区负责人可为其管辖的任一校区新增学生
+        managed = managed_campus_ids(db, current_user) or set()
+        if payload.get("campus_id") not in managed:
+            payload["campus_id"] = current_user.campus_id if current_user.campus_id in managed else (next(iter(managed), None))
         if payload.get("teacher_id") is not None:
             # 校区负责人只能指定其管辖校区内的教师；无校区新教师自动归属
             _adopt_teacher_campus(db, current_user, payload["teacher_id"], payload.get("campus_id"))

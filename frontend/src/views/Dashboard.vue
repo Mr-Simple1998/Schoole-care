@@ -59,6 +59,88 @@
       </el-card>
     </transition>
 
+    <!-- 教师上下班打卡（教师端） -->
+    <el-card v-if="userStore.isTeacher" shadow="never" class="mt-16">
+      <div class="card-title">教师打卡</div>
+      <div class="clock-bar">
+        <div class="clock-info">
+          <span class="clock-time">{{ myClock && myClock.time_in ? '上班 ' + myClock.time_in : '今日未打卡' }}</span>
+          <span v-if="myClock && myClock.time_out" class="clock-out">下班 {{ myClock.time_out }}</span>
+          <el-tag v-if="myClock" size="small" :type="myClock.status === '正常' ? 'success' : 'warning'">{{ myClock.status }}</el-tag>
+        </div>
+        <div class="clock-btns">
+          <el-button type="primary" :loading="clockLoading" @click="doClock('in')">上班打卡</el-button>
+          <el-button type="warning" :loading="clockLoading" @click="doClock('out')">下班打卡</el-button>
+        </div>
+      </div>
+      <div v-if="myClock && (myClock.work_start || myClock.work_end)" class="clock-schedule">
+        规定上下班：{{ myClock.work_start || '未设' }} — {{ myClock.work_end || '未设' }}
+      </div>
+    </el-card>
+
+    <!-- 本月学生考勤（日历·教师端） -->
+    <el-card v-if="userStore.isTeacher && attendanceSummary.students && attendanceSummary.students.length" shadow="never" class="mt-16">
+      <template #header>
+        <div class="att-head">
+          <div class="card-title">本月学生考勤（日历）</div>
+          <div class="att-actions">
+            <el-button size="small" type="primary" @click="openDashboardAttendance">给学生打卡</el-button>
+            <el-button size="small" type="primary" plain @click="$router.push('/student-attendance')">进入日历</el-button>
+          </div>
+        </div>
+      </template>
+      <div class="cal-legend">
+        <span class="leg"><i class="cal-dot is-normal"></i>正常</span>
+        <span class="leg"><i class="cal-dot is-late"></i>迟到</span>
+        <span class="leg"><i class="cal-dot is-absent"></i>缺勤</span>
+        <span class="leg"><i class="cal-dot is-leave"></i>请假</span>
+        <span class="leg"><i class="cal-dot is-early"></i>早退</span>
+        <span class="leg"><i class="cal-dot is-empty"></i>未记录</span>
+      </div>
+      <div class="cal-scroll">
+        <table class="cal-table">
+          <thead>
+            <tr>
+              <th class="cal-name-th">学生</th>
+              <th v-for="d in monthDays" :key="d.dayStr" class="cal-day" :class="{ 'is-today': d.isToday }">{{ d.day }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in attendanceSummary.students" :key="s.student_id">
+              <td class="cal-name">{{ s.student_name }}</td>
+              <td v-for="d in monthDays" :key="d.dayStr" class="cal-cell" :title="s.student_name + ' ' + d.dayStr + ' ' + (cellStatus(s, d.dayStr) || '未记录')">
+                <i class="cal-dot" :class="'is-' + statusClass(cellStatus(s, d.dayStr))"></i>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </el-card>
+
+    <!-- 本月教师考勤汇总（仅校区负责人） -->
+    <el-card v-if="userStore.isSubPrincipal && attendanceSummary.teachers && attendanceSummary.teachers.length" shadow="never" class="mt-16">
+      <template #header>
+        <div class="card-title">本月教师考勤汇总</div>
+      </template>
+      <el-table :data="attendanceSummary.teachers" size="small" stripe>
+        <el-table-column label="教师" min-width="120">
+          <template #default="{ row }">
+            {{ row.teacher_name }}<span v-if="row.work_start" class="ws">（{{ row.work_start }}-{{ row.work_end || '未设' }}）</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="normal" label="正常" width="70" align="center" />
+        <el-table-column prop="late" label="迟到" width="70" align="center" />
+        <el-table-column prop="early" label="早退" width="70" align="center" />
+        <el-table-column prop="absent" label="缺勤" width="70" align="center" />
+        <el-table-column label="标记" width="150">
+          <template #default="{ row }">
+            <el-tag v-if="row.late || row.absent" type="warning" size="small">迟到{{ row.late }} · 缺勤{{ row.absent }}</el-tag>
+            <el-tag v-else type="success" size="small">正常</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
     <!-- 图表区（收入趋势仅总校长/校区负责人可见本校区收入） -->
     <el-row v-if="userStore.isPrincipal || userStore.isSubPrincipal" :gutter="16" class="mt-16">
       <el-col :span="16">
@@ -107,6 +189,41 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 给学生分学科打卡 -->
+    <el-dialog v-model="attVisible" title="给学生打卡" width="480px">
+      <el-form label-width="80px">
+        <el-form-item label="学生">
+          <el-select v-model="attStudentId" placeholder="选择学生" filterable style="width:100%" @change="onAttStudentChange">
+            <el-option v-for="s in myStudents" :key="s.id" :label="s.name" :value="s.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="学科">
+          <el-select v-model="attForm.subject_id" placeholder="请选择打卡学科" filterable style="width:100%">
+            <el-option
+              v-for="ss in attSubjects"
+              :key="ss.subject_id"
+              :label="`${ss.subject_name}${ss.remaining !== null ? ' (剩' + ss.remaining + '次)' : ''}`"
+              :value="ss.subject_id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="日期">
+          <el-date-picker v-model="attForm.date" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="attForm.status" style="width:100%">
+            <el-option label="正常" value="正常" /><el-option label="迟到" value="迟到" /><el-option label="早退" value="早退" />
+            <el-option label="请假" value="请假" /><el-option label="缺勤" value="缺勤" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注"><el-input v-model="attForm.remark" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="attVisible = false">取消</el-button>
+        <el-button type="primary" :loading="attSaving" @click="saveAttendance">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -116,6 +233,7 @@ import * as echarts from 'echarts'
 import request from '@/utils/request'
 import { useUserStore } from '@/stores/user'
 import { AlarmClock } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 
 const userStore = useUserStore()
 const incomeChartRef = ref()
@@ -128,6 +246,14 @@ let catChart = null
 const overview = ref({})
 const subjectStats = ref({ subject_counts: [], category_counts: {}, total_students: 0 })
 const animatedValues = reactive({})
+const attendanceSummary = ref({})
+const myClock = ref(null)
+const clockLoading = ref(false)
+const myStudents = ref([])
+const attVisible = ref(false)
+const attSaving = ref(false)
+const attStudentId = ref(null)
+const attForm = reactive({ subject_id: null, date: '', status: '正常', remark: '' })
 
 const expireAlert = computed(() => {
   const e = overview.value.org_expire
@@ -207,6 +333,107 @@ async function loadData() {
   }
   subjectStats.value = await request.get('/subjects/stats')
   renderSubjectCharts()
+  // 月度考勤汇总（教师/校区负责人）+ 教师今日打卡；总校长不展示打卡信息
+  try {
+    if (!userStore.isPrincipal) {
+      attendanceSummary.value = await request.get('/dashboard/attendance-summary')
+      if (userStore.isTeacher) {
+        const list = await request.get('/learning/teacher-attendance')
+        const today = todayStr()
+        myClock.value = list.find((x) => x.date === today) || null
+        myStudents.value = await request.get('/students')
+      }
+    }
+  } catch (e) {
+    attendanceSummary.value = {}
+  }
+}
+
+function todayStr() {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${dd}`
+}
+
+async function doClock(action) {
+  clockLoading.value = true
+  try {
+    myClock.value = await request.post('/learning/teacher-attendance', { action })
+    ElMessage.success(action === 'in' ? '上班打卡成功' : '下班打卡成功')
+  } finally {
+    clockLoading.value = false
+  }
+}
+
+// 日历：当月各天（学生考勤日历展示用）
+const monthDays = computed(() => {
+  const month = attendanceSummary.value.month || todayStr().slice(0, 7)
+  const [y, m] = month.split('-').map(Number)
+  const days = new Date(y, m, 0).getDate()
+  const today = todayStr()
+  return Array.from({ length: days }, (_, i) => {
+    const day = i + 1
+    const dayStr = `${month}-${String(day).padStart(2, '0')}`
+    return { day, dayStr, isToday: dayStr === today }
+  })
+})
+
+function cellStatus(student, dayStr) {
+  const rec = (student.records || []).find((r) => r.date === dayStr)
+  return rec ? rec.status : ''
+}
+
+// 考勤状态 → 图标 class（正常/迟到/缺勤/请假/早退/未记录）
+const STATUS_CLASS = { 正常: 'normal', 迟到: 'late', 缺勤: 'absent', 请假: 'leave', 早退: 'early' }
+function statusClass(status) {
+  return STATUS_CLASS[status] || 'empty'
+}
+
+// 打卡：当前选中学生的学科课时（供学科下拉）
+const attSubjects = computed(() => {
+  const s = myStudents.value.find((x) => x.id === attStudentId.value)
+  return s?.subject_sessions || []
+})
+
+function openDashboardAttendance() {
+  attStudentId.value = null
+  attForm.subject_id = null
+  attForm.date = todayStr()
+  attForm.status = '正常'
+  attForm.remark = ''
+  attVisible.value = true
+}
+
+function onAttStudentChange() {
+  attForm.subject_id = null
+}
+
+async function saveAttendance() {
+  if (!attStudentId.value) {
+    ElMessage.warning('请选择学生')
+    return
+  }
+  if (!attForm.subject_id) {
+    ElMessage.warning('请选择打卡学科')
+    return
+  }
+  attSaving.value = true
+  try {
+    await request.post('/learning/attendance', {
+      student_id: attStudentId.value,
+      subject_id: attForm.subject_id,
+      date: attForm.date,
+      status: attForm.status,
+      remark: attForm.remark || null,
+    })
+    ElMessage.success('打卡成功')
+    attVisible.value = false
+    // 刷新日历，与学生管理数据保持一致
+    attendanceSummary.value = await request.get('/dashboard/attendance-summary')
+  } finally {
+    attSaving.value = false
+  }
 }
 
 function renderIncomeChart(data) {
@@ -380,6 +607,98 @@ onBeforeUnmount(() => {
   font-weight: 500;
   color: var(--text-secondary);
 }
+.clock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.clock-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.clock-time {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+.clock-out {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.clock-btns {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.clock-schedule {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.ws {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: 4px;
+}
+:deep(.el-card__header) .card-title {
+  margin-bottom: 0;
+}
+.att-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.att-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cal-legend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #6b7280;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.cal-legend .leg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cal-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.cal-dot.is-normal { background: #10b981; }
+.cal-dot.is-late { background: #f59e0b; }
+.cal-dot.is-absent { background: #ef4444; }
+.cal-dot.is-leave { background: #3b82f6; }
+.cal-dot.is-early { background: #8b5cf6; }
+.cal-dot.is-empty { background: #e5e7eb; }
+.cal-scroll { overflow-x: auto; }
+.cal-table { border-collapse: collapse; width: 100%; min-width: 640px; }
+.cal-table th, .cal-table td { border: 1px solid #f0f0f0; text-align: center; }
+.cal-table th.cal-name-th, .cal-table td.cal-name {
+  text-align: left;
+  padding: 6px 10px;
+  white-space: nowrap;
+  font-size: 13px;
+  min-width: 90px;
+  font-weight: 500;
+}
+.cal-day { font-size: 12px; color: #909399; padding: 4px 2px; min-width: 22px; font-weight: 500; }
+.cal-day.is-today { background: #ecfdf5; color: #059669; font-weight: 700; }
+.cal-cell { padding: 4px 2px; }
+.cal-cell .cal-dot { display: block; margin: 0 auto; }
 /* transitions */
 .slide-down-enter-active { transition: all 0.4s ease-out; }
 .slide-down-leave-active { transition: all 0.3s ease-in; }
