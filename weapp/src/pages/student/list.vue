@@ -4,7 +4,7 @@
 		<view v-if="store.isPlatform" class="platform-tip">
 			<view class="card">
 				<view class="tip-title">🏢 平台账号无机构学生数据</view>
-				<view class="tip-desc">机构开户、续费与流水请在「机构开户管理」中操作；学生数据请使用总校长 / 校长管理号 / 教师账号登录查看。</view>
+				<view class="tip-desc">机构开户、续费与流水请在「机构开户管理」中操作；学生数据请使用校长 / 校区负责人 / 教师账号登录查看。</view>
 				<button class="btn-primary tip-btn" @click="goPlatform">进入机构开户管理</button>
 			</view>
 		</view>
@@ -75,7 +75,7 @@
 					<text class="sub-label">科目</text>
 					<text v-for="sub in s.subjects" :key="sub.id" class="sub-tag">{{ sub.name }}</text>
 				</view>
-				<!-- 学生分开管理：各角色只能给自己负责的学生打卡（总校长/校区负责人/教师均可拥有自己的学生） -->
+				<!-- 学生分开管理：各角色只能给自己负责的学生打卡（校长/校区负责人/教师均可拥有自己的学生） -->
 				<button v-if="s.teacher_id === store.user.id" class="btn-primary attend-btn" @click="openAttend(s)">打卡</button>
 			</view>
 		</view>
@@ -92,6 +92,12 @@
 					<text class="label">选择学科</text>
 					<picker :range="attendNames" @change="e => attendSubjectId = attendSubjects[e.detail.value].id">
 						<view class="input">{{ attendSubjectName }}</view>
+					</picker>
+				</view>
+				<view class="field">
+					<text class="label">打卡日期（可补卡）</text>
+					<picker mode="date" :value="attendDate" @change="e => attendDate=e.detail.value">
+						<view class="input picker-box">{{ attendDate }}<text class="arrow">›</text></view>
 					</picker>
 				</view>
 				<view class="dialog-btns">
@@ -118,7 +124,8 @@ export default {
 			showAttend: false,
 			attendStudent: null,
 			attendSubjects: [],
-			attendSubjectId: null
+			attendSubjectId: null,
+			attendDate: ''
 		};
 	},
 	onShow() {
@@ -177,13 +184,27 @@ export default {
 			uni.navigateTo({ url: '/pages/student/detail?id=' + id });
 		},
 		attendLabel(s) {
-			return s.remaining !== null ? `${s.name}（剩${s.remaining}次）` : s.name;
+			const hasRemain = s.remaining !== null && s.remaining !== undefined;
+			return hasRemain ? `${s.name}（剩${s.remaining}次）` : s.name;
 		},
 		openAttend(s) {
 			this.attendStudent = s;
-			this.attendSubjects = s.subject_sessions && s.subject_sessions.length ? s.subject_sessions : (s.subjects || []);
+			// 打卡学科：优先用课时会话（subject_sessions：subject_id/subject_name/remaining），否则退回学科列表（subjects：id/name）
+			const sessions = (s.subject_sessions && s.subject_sessions.length) ? s.subject_sessions : (s.subjects || []);
+			this.attendSubjects = sessions.map(x => ({
+				id: x.subject_id != null ? x.subject_id : x.id,
+				name: x.subject_name || x.name || '',
+				remaining: x.remaining
+			}));
 			this.attendSubjectId = this.attendSubjects.length ? this.attendSubjects[0].id : null;
+			this.attendDate = this.todayStr();
 			this.showAttend = true;
+		},
+		todayStr() {
+			const d = new Date();
+			const m = String(d.getMonth() + 1).padStart(2, '0');
+			const dd = String(d.getDate()).padStart(2, '0');
+			return `${d.getFullYear()}-${m}-${dd}`;
 		},
 		async doAttend() {
 			if (!this.attendSubjectId) {
@@ -194,7 +215,7 @@ export default {
 				await post('/learning/attendance', {
 					student_id: Number(this.attendStudent.id),
 					subject_id: this.attendSubjectId,
-					date: new Date().toISOString().slice(0, 10),
+					date: this.attendDate || this.todayStr(),
 					status: '正常'
 				});
 				uni.showToast({ title: '打卡成功', icon: 'success' });
@@ -292,4 +313,6 @@ export default {
 .field { margin-bottom: 20rpx; }
 .label { display: block; font-size: 24rpx; color: #606266; margin-bottom: 8rpx; }
 .input { background: #f5f7fa; border-radius: 10rpx; padding: 16rpx 20rpx; font-size: 28rpx; }
+.picker-box { display: flex; align-items: center; justify-content: space-between; }
+.picker-box .arrow { color: #c0c4cc; font-size: 32rpx; line-height: 1; }
 </style>

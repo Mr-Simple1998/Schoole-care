@@ -55,8 +55,8 @@ export default {
 	computed: {
 		roleText() {
 			const r = this.store.user && this.store.user.role;
-			if (r === 'principal') return '总校长';
-			if (r === 'sub_principal' || r === 'campus_head') return '校长管理号';
+			if (r === 'principal') return '校长';
+			if (r === 'sub_principal' || r === 'campus_head') return '校区负责人';
 			if (r === 'teacher') return '教师';
 			if (r === 'platform') return '平台管理员';
 			return '';

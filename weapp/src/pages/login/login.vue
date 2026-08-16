@@ -25,7 +25,7 @@
 				</view>
 			</view>
 			<button class="btn-primary login-btn" @click="doBind" :loading="loading">登录并绑定微信</button>
-			<view class="tip">首次需输入总校长/校长管理号/教师账号密码完成微信绑定，之后自动登录</view>
+			<view class="tip">首次需输入校长/校区负责人/教师账号密码完成微信绑定，之后自动登录</view>
 		</view>
 	</view>
 </template>

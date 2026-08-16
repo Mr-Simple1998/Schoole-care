@@ -164,8 +164,8 @@ const roleTagType = computed(() => {
 })
 const roleText = computed(() => {
   if (userStore.isPlatform) return '平台管理员'
-  if (userStore.isPrincipal) return '总校长'
-  if (userStore.isSubPrincipal) return '校长管理号'
+  if (userStore.isPrincipal) return '校长'
+  if (userStore.isSubPrincipal) return '校区负责人'
   return '教师'
 })
 

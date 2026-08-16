@@ -55,7 +55,7 @@
                 effect="light"
                 class="head-tag"
               >
-                {{ h.name }}{{ h.role === 'principal' ? '·总校长' : '' }}
+                {{ h.name }}{{ h.role === 'principal' ? '·校长' : (h.role === 'sub_principal' || h.role === 'campus_head') ? '·校区负责人' : '' }}
               </el-tag>
               <el-tag v-if="c.heads.length > 2" size="small" type="info" effect="plain">+{{ c.heads.length - 2 }}</el-tag>
             </template>
@@ -198,6 +198,18 @@
         <el-form-item label="备注">
           <el-input v-model="campusForm.remark" type="textarea" :rows="2" placeholder="备注信息" />
         </el-form-item>
+        <el-form-item v-if="!campusForm.id" label="负责人">
+          <el-select v-model="campusForm.head_user_ids" multiple filterable collapse-tags collapse-tags-tooltip placeholder="可多选：校长 / 教师 / 校区负责人（可选）" style="width: 100%">
+            <el-option
+              v-for="t in headCandidates"
+              :key="t.id"
+              :label="`${t.name}（${t.username}）${t.role === 'principal' ? '· 校长' : t.role === 'sub_principal' || t.role === 'campus_head' ? '· 校区负责人' : ''}${t.resigned ? ' · 已离职' : ''}${!t.is_active && !t.resigned ? ' · 已停用' : ''}`"
+              :value="t.id"
+              :disabled="t.resigned || !t.is_active"
+            />
+          </el-select>
+          <div class="form-tip">创建校区时可同时指定负责人（可包含校长本人）；留空则稍后在「负责人」中设置。</div>
+        </el-form-item>
         <el-form-item v-if="campusForm.id" label="状态">
           <el-switch v-model="campusForm.status" :active-value="true" :inactive-value="false" active-text="启用" inactive-text="停用" />
         </el-form-item>
@@ -208,7 +220,7 @@
       </template>
     </el-dialog>
 
-    <!-- 负责人设置对话框（可多选，含总校长；支持离职办理） -->
+    <!-- 负责人设置对话框（可多选，含校长；支持离职办理） -->
     <el-dialog v-model="headVisible" :title="`设置「${headCampus?.name || ''}」负责人（可多选）`" width="580px">
       <el-form label-width="90px">
         <el-form-item label="当前负责人">
@@ -217,7 +229,7 @@
               <div v-for="h in headCampus.heads" :key="h.id" class="head-item">
                 <span class="head-name">
                   {{ h.name }}（{{ h.username }}）
-                  <el-tag v-if="h.role === 'principal'" size="small" type="danger" effect="plain">总校长</el-tag>
+                  <el-tag v-if="h.role === 'principal'" size="small" type="danger" effect="plain">校长</el-tag>
                 </span>
                 <el-button size="small" link type="danger" @click="handleResignHead(h)">办理离职</el-button>
               </div>
@@ -226,16 +238,16 @@
           <span v-else class="empty-inline">未设置</span>
         </el-form-item>
         <el-form-item label="选择负责人">
-          <el-select v-model="headUserIds" multiple filterable collapse-tags collapse-tags-tooltip placeholder="可多选：总校长 / 教师 / 其他校区负责人" style="width: 100%">
+          <el-select v-model="headUserIds" multiple filterable collapse-tags collapse-tags-tooltip placeholder="可多选：校长 / 教师 / 其他校区负责人" style="width: 100%">
             <el-option
               v-for="t in headCandidates"
               :key="t.id"
-              :label="`${t.name}（${t.username}）${t.role === 'principal' ? '· 总校长' : ''}${t.campus_name && t.campus_id !== headCampus?.id ? ' · ' + t.campus_name : ''}${t.resigned ? ' · 已离职' : ''}${!t.is_active && !t.resigned ? ' · 已停用' : ''}`"
+              :label="`${t.name}（${t.username}）${t.role === 'principal' ? '· 校长' : ''}${t.campus_name && t.campus_id !== headCampus?.id ? ' · ' + t.campus_name : ''}${t.resigned ? ' · 已离职' : ''}${!t.is_active && !t.resigned ? ' · 已停用' : ''}`"
               :value="t.id"
               :disabled="t.resigned || !t.is_active"
             />
           </el-select>
-          <div class="form-tip">保存后本校区负责人将更新为所选账号；未被选中的原负责人自动降为教师。可同时选择总校长本人。</div>
+          <div class="form-tip">保存后本校区负责人将更新为所选账号；未被选中的原负责人自动降为教师。可同时选择校长本人。</div>
         </el-form-item>
         <el-form-item label="新建负责人">
           <el-switch v-model="headCreateMode" active-text="同时新建一个负责人账号" />
@@ -256,7 +268,7 @@
         </template>
       </el-form>
       <div class="head-tip">
-        校长管理号只能查看/操作自己管辖校区的数据（学生、教师、收支等）。负责人离职后：账号停用、校区全部数据保留；重新指定/新建负责人即自动完成数据交接（学生、收支、收费记录全部移交）。
+        校区负责人只能查看/操作自己管辖校区的数据（学生、教师、收支等）。负责人离职后：账号停用、校区全部数据保留；重新指定/新建负责人即自动完成数据交接（学生、收支、收费记录全部移交）。
       </div>
       <template #footer>
         <el-button @click="headVisible = false">取消</el-button>
@@ -331,7 +343,7 @@ const headNew = reactive({ name: '', username: '', password: '', phone: '' })
 const canManage = computed(() => overview.value?.can_manage ?? userStore.isPrincipal)
 const summary = computed(() => overview.value?.summary)
 
-const emptyCampus = () => ({ id: null, name: '', address: '', phone: '', remark: '', status: true })
+const emptyCampus = () => ({ id: null, name: '', address: '', phone: '', remark: '', status: true, head_user_ids: [] })
 const campusForm = reactive(emptyCampus())
 const txnForm = reactive({ campus_id: null, kind: 'income', category: '', amount: null, record_date: '', remark: '' })
 
@@ -397,6 +409,9 @@ async function handleSaveCampus() {
       await request.put(`/campuses/${campusForm.id}`, payload)
       ElMessage.success('校区已更新')
     } else {
+      if (campusForm.head_user_ids && campusForm.head_user_ids.length) {
+        payload.head_user_ids = campusForm.head_user_ids
+      }
       await request.post('/campuses', payload)
       ElMessage.success('校区已创建')
     }
@@ -418,7 +433,7 @@ async function handleDeleteCampus(c) {
   }
 }
 
-// ===== 负责人（多选，含总校长；支持离职交接） =====
+// ===== 负责人（多选，含校长；支持离职交接） =====
 function openHead(c) {
   headCampus.value = c
   headUserIds.value = (c.heads || []).map((h) => h.id)

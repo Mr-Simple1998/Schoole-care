@@ -13,7 +13,7 @@
         <div class="mini-stat">
           <div class="ms-label">教师总数</div>
           <div class="ms-value">{{ teacherStats.total }}</div>
-          <div class="ms-sub">含校长管理号 {{ teacherStats.heads }} 个</div>
+          <div class="ms-sub">含校区负责人 {{ teacherStats.heads }} 个</div>
         </div>
         <div class="mini-stat">
           <div class="ms-label">启用中</div>
@@ -55,7 +55,7 @@
         <el-table-column prop="role" label="角色" width="110">
           <template #default="{ row }">
             <el-tag size="small" round effect="light" :type="roleTagType(row.role)">
-              {{ roleText(row.role) }}
+              {{ roleText(row) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -106,13 +106,6 @@
               <el-button size="small" link type="warning" @click="openResetPwd(row)">重置密码</el-button>
               <el-button v-if="row.is_active" size="small" link type="warning" @click="handleToggle(row, false)">停用</el-button>
               <el-button v-else size="small" link type="success" @click="handleToggle(row, true)">重新启用</el-button>
-              <el-button
-                v-if="row.role === 'teacher' && row.is_active"
-                size="small"
-                link
-                type="danger"
-                @click="handleResign(row)"
-              >离职</el-button>
               <el-button size="small" link type="danger" @click="handleDelete(row)">删除</el-button>
             </template>
           </template>
@@ -162,8 +155,10 @@
 
     <!-- 编辑教师对话框 -->
     <el-dialog v-model="editVisible" title="编辑教师信息" width="480px">
-      <div style="margin-bottom: 12px">教师：<b>{{ editTarget?.name }}</b></div>
       <el-form label-width="80px">
+        <el-form-item label="姓名">
+          <el-input v-model="editName" placeholder="修改后账号名下数据（学生/考勤/收费等）保持不变" />
+        </el-form-item>
         <el-form-item label="所属校区" v-if="userStore.isPrincipal">
           <el-select v-model="editCampusId" placeholder="选择校区（可选）" clearable style="width: 100%">
             <el-option v-for="c in campuses" :key="c.id" :label="c.name" :value="c.id" />
@@ -240,14 +235,19 @@ const pwdTarget = ref(null)
 const workTimeTarget = ref(null)
 const editSubjectIds = ref([])
 const editCampusId = ref(null)
+const editName = ref('')
 const pwdForm = reactive({ password: '' })
 const workTimeForm = reactive({ work_start_time: '', work_end_time: '' })
 const saving = ref(false)
 const formRef = ref()
 
-function roleText(role) {
-  if (role === 'principal') return '总校长'
-  if (role === 'sub_principal' || role === 'campus_head') return '校长管理号'
+function roleText(row) {
+  const role = typeof row === 'string' ? row : row.role
+  if (role === 'principal') return '校长'
+  if (role === 'sub_principal' || role === 'campus_head') {
+    const campusName = typeof row === 'object' && row.campus_name ? row.campus_name : ''
+    return campusName ? `${campusName}·校区负责人` : '校区负责人'
+  }
   return '教师'
 }
 function roleTagType(role) {
@@ -333,15 +333,21 @@ async function handleSave() {
 
 function openEditDialog(row) {
   editTarget.value = row
+  editName.value = row.name || ''
   editSubjectIds.value = (row.subjects || []).map((s) => s.id)
   editCampusId.value = row.campus_id ?? null
   editVisible.value = true
 }
 
 async function handleEditSave() {
+  if (!editName.value.trim()) {
+    ElMessage.warning('请输入姓名')
+    return
+  }
   saving.value = true
   try {
     await request.put(`/auth/users/${editTarget.value.id}`, {
+      name: editName.value.trim(),
       subject_ids: editSubjectIds.value,
       campus_id: editCampusId.value,
     })
@@ -359,22 +365,6 @@ async function handleToggle(row, active) {
   await request.put(`/auth/users/${row.id}`, { is_active: active })
   ElMessage.success(active && row.resigned ? '已重新启用（离职标记已清除）' : `已${verb}`)
   loadTeachers()
-}
-
-async function handleResign(row) {
-  await ElMessageBox.confirm(
-    `确定办理「${row.name}」的离职吗？\n离职后其账号将停用，名下所有学生数据保留，并暂存至所在校区负责人处；之后可分配给其他教师或新账号。`,
-    '教师离职',
-    { type: 'warning', confirmButtonText: '办理离职', confirmButtonClass: 'el-button--danger' },
-  )
-  try {
-    const res = await request.post(`/auth/users/${row.id}/resign`)
-    const n = res.students_transferred || 0
-    ElMessage.success(`离职办理完成：${n} 名学生已暂存至校区负责人处，可再分配`)
-    loadTeachers()
-  } catch (e) {
-    // 全局拦截器已提示错误
-  }
 }
 
 async function handleDelete(row) {

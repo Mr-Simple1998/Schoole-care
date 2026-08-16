@@ -115,6 +115,9 @@
 						<text v-if="myClock" class="tag" :class="myClock.status === '正常' ? 'tag-success' : 'tag-warn'">{{ myClock.status }}</text>
 					</view>
 					<view class="clock-btns">
+						<picker mode="date" :value="clockDate" @change="e => clockDate=e.detail.value" class="clock-date">
+							<view class="clock-date-box">{{ clockDate }}<text class="arrow">›</text></view>
+						</picker>
 						<button class="btn-primary clock-btn" :loading="clockLoading" @click="doClock('in')">上班打卡</button>
 						<button class="btn-primary clock-btn" :loading="clockLoading" @click="doClock('out')">下班打卡</button>
 					</view>
@@ -124,13 +127,36 @@
 				</view>
 			</view>
 
-			<!-- 本月学生考勤 · 查看日历（仅教师；点开查看全体学生本月打卡情况） -->
-			<view class="card" v-if="store.isTeacher">
-				<view class="card-title"><text class="bar"></text>本月学生考勤</view>
+			<!-- 本月学生考勤（教师/校长/校区负责人：查看自己所负责学生的本月打卡情况，每页10个） -->
+			<view class="card" v-if="store.isTeacher || store.isPrincipal || store.isSubPrincipal">
+				<view class="card-title">
+					<text class="bar"></text>本月学生考勤
+					<text class="att-count" v-if="attTotal">共 {{ attTotal }} 人</text>
+				</view>
+				<view v-if="attStudents.length" class="att-list">
+					<view v-for="s in attStudents" :key="s.student_id" class="att-row">
+						<view class="att-row-left">
+							<text class="att-name">{{ s.student_name }}</text>
+							<text class="att-summary">
+								正常 {{ s.normal || 0 }} · 迟到 {{ s.late || 0 }} · 请假 {{ s.leave || 0 }} · 缺勤 {{ s.absent || 0 }}
+							</text>
+						</view>
+						<view class="att-row-right">
+							<text class="att-total">共 {{ s.total || 0 }} 次</text>
+						</view>
+					</view>
+				</view>
+				<view v-else class="text-muted empty-sm">本月暂无学生考勤记录</view>
+				<!-- 分页（每页 10 个） -->
+				<view v-if="attTotalPages > 1" class="att-pager">
+					<text class="page-btn" :class="{ disabled: attPage <= 1 }" @click="attPrev">‹ 上一页</text>
+					<text class="page-info">{{ attPage }} / {{ attTotalPages }}</text>
+					<text class="page-btn" :class="{ disabled: attPage >= attTotalPages }" @click="attNext">下一页 ›</text>
+				</view>
 				<view class="cal-entry" @click="goAttendanceCalendar">
 					<view class="cal-entry-info">
-						<text class="cal-entry-title">📅 查看日历</text>
-						<text class="cal-entry-sub">查看全体学生本月打卡情况</text>
+						<text class="cal-entry-title">📅 查看完整日历</text>
+						<text class="cal-entry-sub">查看自己所负责学生的逐日打卡情况</text>
 					</view>
 					<text class="cal-arrow">›</text>
 				</view>
@@ -197,15 +223,30 @@ export default {
 			organizations: [],
 			platOverview: {},
 			attendanceSummary: {},
+			attPage: 1,
+			attPageSize: 10,
 			myClock: null,
-			clockLoading: false
+			clockLoading: false,
+			clockDate: ''
 		};
 	},
 	computed: {
+		// 本月学生考勤：分页（每页 10 个学生）
+		attStudents() {
+			const all = (this.attendanceSummary.students) || [];
+			const start = (this.attPage - 1) * this.attPageSize;
+			return all.slice(start, start + this.attPageSize);
+		},
+		attTotal() {
+			return ((this.attendanceSummary.students) || []).length;
+		},
+		attTotalPages() {
+			return Math.max(1, Math.ceil(this.attTotal / this.attPageSize));
+		},
 		roleText() {
 			const r = this.store.user && this.store.user.role;
-			if (r === 'principal') return '总校长';
-			if (r === 'sub_principal' || r === 'campus_head') return '校长管理号';
+			if (r === 'principal') return '校长';
+			if (r === 'sub_principal' || r === 'campus_head') return '校区负责人';
 			if (r === 'teacher') return '教师';
 			if (r === 'platform') return '平台管理员';
 			return '';
@@ -232,10 +273,9 @@ export default {
 			return;
 		}
 		this.loadOverview();
-		if (!this.store.isPrincipal) {
-			this.loadAttendanceSummary();
-		}
+		this.loadAttendanceSummary();
 		if (this.store.isTeacher) {
+			this.clockDate = this.todayStr();
 			this.loadTeacherClock();
 		}
 	},
@@ -251,7 +291,14 @@ export default {
 		async loadAttendanceSummary() {
 			try {
 				this.attendanceSummary = await get('/dashboard/attendance-summary');
+				this.attPage = 1;
 			} catch (e) {}
+		},
+		attPrev() {
+			if (this.attPage > 1) this.attPage--;
+		},
+		attNext() {
+			if (this.attPage < this.attTotalPages) this.attPage++;
 		},
 		async loadTeacherClock() {
 			try {
@@ -263,13 +310,21 @@ export default {
 		async doClock(action) {
 			this.clockLoading = true;
 			try {
-				this.myClock = await post('/learning/teacher-attendance', { action });
+				const payload = { action };
+				if (this.clockDate) payload.date = this.clockDate;
+				this.myClock = await post('/learning/teacher-attendance', payload);
 				const verb = action === 'in' ? '上班' : '下班';
 				uni.showToast({ title: `${verb}打卡成功`, icon: 'success' });
 			} catch (e) {
 			} finally {
 				this.clockLoading = false;
 			}
+		},
+		todayStr() {
+			const d = new Date();
+			const m = String(d.getMonth() + 1).padStart(2, '0');
+			const dd = String(d.getDate()).padStart(2, '0');
+			return `${d.getFullYear()}-${m}-${dd}`;
 		},
 		async loadPlatform() {
 			try {
@@ -319,9 +374,55 @@ export default {
 .clock-info { min-width: 0; display: flex; flex-direction: column; gap: 6rpx; align-items: flex-start; }
 .clock-time { font-size: 32rpx; font-weight: 700; color: #303133; }
 .clock-sub { font-size: 24rpx; color: #909399; }
-.clock-btns { display: flex; gap: 12rpx; flex-shrink: 0; }
+.clock-btns { display: flex; gap: 12rpx; flex-shrink: 0; align-items: center; flex-wrap: wrap; }
 .clock-btn { margin: 0; font-size: 26rpx; padding: 0 24rpx; height: 64rpx; line-height: 64rpx; }
+.clock-date { flex-shrink: 0; }
+.clock-date-box {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8rpx;
+	background: #f5f7fa;
+	border-radius: 10rpx;
+	padding: 12rpx 20rpx;
+	font-size: 26rpx;
+	color: #303133;
+}
+.clock-date-box .arrow { color: #c0c4cc; font-size: 30rpx; line-height: 1; }
 .clock-schedule { margin-top: 14rpx; font-size: 22rpx; color: #909399; }
+.att-count { font-size: 22rpx; color: #909399; font-weight: 400; margin-left: 12rpx; }
+.att-list { margin-top: 8rpx; }
+.att-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 18rpx 4rpx;
+	border-bottom: 1rpx solid #f5f5f5;
+	gap: 16rpx;
+}
+.att-row:last-child { border-bottom: none; }
+.att-row-left { min-width: 0; display: flex; flex-direction: column; gap: 4rpx; }
+.att-name { font-size: 30rpx; color: #303133; font-weight: 500; }
+.att-summary { font-size: 22rpx; color: #909399; }
+.att-row-right { flex-shrink: 0; }
+.att-total { font-size: 24rpx; color: #10b981; font-weight: 600; }
+.att-pager {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 24rpx;
+	margin: 20rpx 0;
+}
+.page-btn {
+	font-size: 26rpx;
+	color: #10b981;
+	padding: 10rpx 24rpx;
+	background: #f0fdf4;
+	border-radius: 10rpx;
+}
+.page-btn.disabled { color: #c0c4cc; background: #f5f7fa; }
+.page-info { font-size: 26rpx; color: #6b7280; }
+.empty-sm { padding: 24rpx 0; font-size: 24rpx; }
 .cal-entry {
 	display: flex;
 	align-items: center;
@@ -330,6 +431,7 @@ export default {
 	border: 1rpx solid #d1fae5;
 	border-radius: 12rpx;
 	padding: 28rpx 24rpx;
+	margin-top: 8rpx;
 }
 .cal-entry-info { display: flex; flex-direction: column; gap: 6rpx; }
 .cal-entry-title { font-size: 30rpx; font-weight: 700; color: #059669; }

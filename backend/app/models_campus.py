@@ -24,7 +24,7 @@ class Campus(Base):
 
 
 class CampusHead(Base):
-    """校区负责人关联表：一个校区可有多名负责人（可多选，选项含总校长）"""
+    """校区负责人关联表：一个校区可有多名负责人（可多选，选项含校长）"""
     __tablename__ = "campus_heads"
 
     id = Column(Integer, primary_key=True, index=True)

@@ -19,8 +19,8 @@ PLAN_TYPES = {
 
 class UserRole(str, Enum):
     PLATFORM = "platform"      # 平台超级管理员（开户）
-    PRINCIPAL = "principal"    # 总校长（机构创始人，平台开户创建；操作限自己校区，可看全校只读总览）
-    SUB_PRINCIPAL = "sub_principal"  # 校区负责人（校长管理号，总校长在校区管理页开号；仅看本校区）
+    PRINCIPAL = "principal"    # 校长（机构创始人，平台开户创建；操作限自己校区，可看全校只读总览）
+    SUB_PRINCIPAL = "sub_principal"  # 校区负责人（校区负责人，校长在校区管理页开号；仅看本校区）
     TEACHER = "teacher"        # 教师
     CAMPUS_HEAD = "campus_head"  # 校区负责人（旧角色，与新 sub_principal 同一套权限逻辑，存量兼容）
 

@@ -17,7 +17,7 @@ def _scope_student_query(q, db: Session, current_user: User):
     """按角色限定学生数据范围：
     - 教师：只看自己负责的学生
     - 校区负责人（sub_principal / campus_head）：只看自己管辖校区（可多校区）的全部学生
-    - 总校长（principal）：归属校区后只看本校区；未归属校区（存量）看全机构
+    - 校长（principal）：归属校区后只看本校区；未归属校区（存量）看全机构
     """
     if current_user.role == UserRole.TEACHER:
         return q.filter(Student.teacher_id == current_user.id)
@@ -52,7 +52,7 @@ def _validate_teacher(db: Session, current_user: User, teacher_id: int | None, s
         raise HTTPException(status_code=400, detail="负责教师不存在或角色不合法")
     if t.resigned:
         raise HTTPException(status_code=400, detail=f"教师「{t.name}」已离职，请选择在职教师")
-    # 负责教师须与学生同校区（负责教师未归属校区时不受限，如未归属校区的总校长可拥有任意校区学生）
+    # 负责教师须与学生同校区（负责教师未归属校区时不受限，如未归属校区的校长可拥有任意校区学生）
     if student_campus_id is not None and t.campus_id is not None and t.campus_id != student_campus_id:
         raise HTTPException(status_code=400, detail="负责教师必须与学生同校区")
 
@@ -234,11 +234,11 @@ def list_students(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """教师仅见自己负责的学生；校区负责人见本校区全部学生；总校长归属校区后见本校区，未归属见全部。
+    """教师仅见自己负责的学生；校区负责人见本校区全部学生；校长归属校区后见本校区，未归属见全部。
     可按 subject_id / campus_id 筛选（campus_id=0 表示未分校区）"""
     q = db.query(Student).filter(Student.org_id == current_user.org_id, Student.deleted == False)  # noqa: E712
     q = _scope_student_query(q, db, current_user)
-    # 仅未归属校区的总校长可跨校区筛选；其余角色数据范围已由 _scope_student_query 限定
+    # 仅未归属校区的校长可跨校区筛选；其余角色数据范围已由 _scope_student_query 限定
     scoped = current_user.role == UserRole.TEACHER or is_head_role(current_user.role) or (
         current_user.role == UserRole.PRINCIPAL and current_user.campus_id
     )
@@ -259,9 +259,9 @@ def list_deleted_students(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """已删除学生列表：仅总校长可查看（归属校区后仅本校区）"""
+    """已删除学生列表：仅校长可查看（归属校区后仅本校区）"""
     if current_user.role != UserRole.PRINCIPAL:
-        raise HTTPException(status_code=403, detail="仅总校长可查看已删除学生")
+        raise HTTPException(status_code=403, detail="仅校长可查看已删除学生")
     q = db.query(Student).filter(Student.org_id == current_user.org_id, Student.deleted == True)  # noqa: E712
     if current_user.campus_id:
         q = q.filter(Student.campus_id == current_user.campus_id)
@@ -337,10 +337,10 @@ class AssignTeacher(BaseModel):
 
 @router.post("/assign")
 def assign_students_teacher(data: AssignTeacher, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """总校长/校区负责人：批量把学生分配给某位教师（或置空暂存至校区）。
+    """校长/校区负责人：批量把学生分配给某位教师（或置空暂存至校区）。
     用于教师离职后学生交接：学生数据全部保留，仅变更负责教师。"""
     if current_user.role == UserRole.TEACHER:
-        raise HTTPException(status_code=403, detail="仅总校长或校区负责人可分配学生")
+        raise HTTPException(status_code=403, detail="仅校长或校区负责人可分配学生")
     if not data.student_ids:
         raise HTTPException(status_code=400, detail="请选择学生")
     students = db.query(Student).filter(

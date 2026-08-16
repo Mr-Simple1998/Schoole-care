@@ -38,7 +38,7 @@
 					<text v-if="c.status === false" class="tag tag-grey">已停用</text>
 				</view>
 				<view class="head-tags" v-if="c.heads && c.heads.length">
-					<text v-for="h in c.heads" :key="h.id" class="tag" :class="h.role === 'principal' ? 'tag-danger' : 'tag-success'">{{ h.name }}{{ h.role === 'principal' ? '·总校长' : '' }}</text>
+					<text v-for="h in c.heads" :key="h.id" class="tag" :class="h.role === 'principal' ? 'tag-danger' : 'tag-success'">{{ h.name }}{{ h.role === 'principal' ? '·校长' : (h.role === 'sub_principal' || h.role === 'campus_head') ? '·校区负责人' : '' }}</text>
 				</view>
 				<text v-else-if="canManage" class="tag tag-plain">未设负责人</text>
 			</view>
@@ -126,6 +126,16 @@
 					<text class="label">备注</text>
 					<input class="input" v-model="campusForm.remark" placeholder="备注信息" />
 				</view>
+				<view class="field" v-if="!campusForm.id && headCandidates.length">
+					<text class="label">负责人（可多选，可选校长本人）</text>
+					<checkbox-group class="head-check-group" @change="e => campusForm.head_user_ids = (e.detail.value || []).map(Number)">
+						<label v-for="t in headCandidates" :key="t.id" class="check-item">
+							<checkbox :value="String(t.id)" :checked="(campusForm.head_user_ids || []).indexOf(t.id) > -1" :disabled="t.resigned || !t.is_active" />
+							<text class="check-label" :class="{ muted: t.resigned || !t.is_active }">{{ t.name }}（{{ t.username }}）{{ t.role === 'principal' ? '·校长' : t.role === 'sub_principal' || t.role === 'campus_head' ? '·校区负责人' : '' }}{{ t.resigned ? '·已离职' : '' }}{{ !t.is_active && !t.resigned ? '·已停用' : '' }}</text>
+						</label>
+					</checkbox-group>
+					<view class="head-tip">创建校区时可同时指定负责人；留空则稍后在「负责人」中设置。</view>
+				</view>
 				<view class="field" v-if="campusForm.id">
 					<text class="label">状态</text>
 					<switch :checked="campusForm.status" color="#10b981" @change="e => campusForm.status = e.detail.value" />
@@ -134,7 +144,7 @@
 			</view>
 		</view>
 
-		<!-- 负责人设置弹层（总校长；可多选，含总校长；支持离职办理） -->
+		<!-- 负责人设置弹层（校长；可多选，含校长；支持离职办理） -->
 		<view v-if="showHeadForm" class="overlay" @click="closeAll">
 			<view class="sheet" @click.stop>
 				<view class="sheet-title">设置「{{ headCampus && headCampus.name }}」负责人（可多选）</view>
@@ -142,7 +152,7 @@
 					<text class="label">当前负责人</text>
 					<view v-if="headCampus && headCampus.heads && headCampus.heads.length" class="head-list">
 						<view v-for="h in headCampus.heads" :key="h.id" class="head-item">
-							<text class="head-item-name">{{ h.name }}（{{ h.username }}）<text v-if="h.role === 'principal'" class="tag tag-danger">总校长</text></text>
+							<text class="head-item-name">{{ h.name }}（{{ h.username }}）<text v-if="h.role === 'principal'" class="tag tag-danger">校长</text></text>
 							<text class="link danger" @click="resignHead(h)">办理离职</text>
 						</view>
 					</view>
@@ -153,10 +163,10 @@
 					<checkbox-group class="head-check-group" @change="e => headForm.user_ids = (e.detail.value || []).map(Number)">
 						<label v-for="t in headCandidates" :key="t.id" class="check-item">
 							<checkbox :value="String(t.id)" :checked="headForm.user_ids.indexOf(t.id) > -1" :disabled="t.resigned || !t.is_active" />
-							<text class="check-label" :class="{ muted: t.resigned || !t.is_active }">{{ t.name }}（{{ t.username }}）{{ t.role === 'principal' ? '·总校长' : '' }}{{ t.resigned ? '·已离职' : '' }}{{ !t.is_active && !t.resigned ? '·已停用' : '' }}</text>
+							<text class="check-label" :class="{ muted: t.resigned || !t.is_active }">{{ t.name }}（{{ t.username }}）{{ t.role === 'principal' ? '·校长' : t.role === 'sub_principal' || t.role === 'campus_head' ? '·校区负责人' : '' }}{{ t.resigned ? '·已离职' : '' }}{{ !t.is_active && !t.resigned ? '·已停用' : '' }}</text>
 						</label>
 					</checkbox-group>
-					<view class="head-tip">保存后校区负责人更新为所选账号，未选中的原负责人自动降为教师；可同时选择总校长本人。</view>
+					<view class="head-tip">保存后校区负责人更新为所选账号，未选中的原负责人自动降为教师；可同时选择校长本人。</view>
 				</view>
 				<view class="field">
 					<text class="label">同时新建负责人账号</text>
@@ -248,7 +258,7 @@ export default {
 			headCandidates: [],
 			headForm: { user_ids: [], createMode: false, name: '', username: '', password: '', phone: '' },
 			saving: false,
-			campusForm: { id: null, name: '', address: '', phone: '', remark: '', status: true },
+			campusForm: { id: null, name: '', address: '', phone: '', remark: '', status: true, head_user_ids: [] },
 			txnForm: { campus_id: null, kind: 'income', category: '', amount: '', record_date: '', remark: '' },
 			INCOME_CATS,
 			EXPENSE_CATS
@@ -300,7 +310,7 @@ export default {
 				}
 			} catch (e) {}
 		},
-		// ---- 设置负责人（总校长；多选含总校长，支持离职办理） ----
+		// ---- 设置负责人（校长；多选含校长，支持离职办理） ----
 		openHead(c) {
 			this.headCampus = c;
 			this.headForm = { user_ids: (c.heads || []).map(h => h.id), createMode: false, name: '', username: '', password: '', phone: '' };
@@ -361,7 +371,7 @@ export default {
 		openCampus(c) {
 			this.campusForm = c
 				? { id: c.id, name: c.name, address: c.address || '', phone: c.phone || '', remark: c.remark || '', status: c.status }
-				: { id: null, name: '', address: '', phone: '', remark: '', status: true };
+				: { id: null, name: '', address: '', phone: '', remark: '', status: true, head_user_ids: [] };
 			this.showCampusForm = true;
 		},
 		async saveCampus() {
@@ -381,6 +391,9 @@ export default {
 					payload.status = this.campusForm.status;
 					await put(`/campuses/${this.campusForm.id}`, payload);
 				} else {
+					if (this.campusForm.head_user_ids && this.campusForm.head_user_ids.length) {
+						payload.head_user_ids = this.campusForm.head_user_ids;
+					}
 					await post('/campuses', payload);
 				}
 				uni.showToast({ title: '保存成功', icon: 'success' });

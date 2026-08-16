@@ -29,6 +29,14 @@
 					<view class="input picker-box">{{ campusName || '请选择（可选）' }}<text class="arrow">›</text></view>
 				</picker>
 			</view>
+			<!-- 负责教师：校长/校区负责人可指定，选项含校长本人 -->
+			<view class="field" v-if="!store.isTeacher && teacherOptions.length">
+				<text class="label">负责教师</text>
+				<picker :range="teacherLabels" @change="e => form.teacher_id = teacherIds[e.detail.value]">
+					<view class="input picker-box">{{ teacherName }}<text class="arrow">›</text></view>
+				</picker>
+				<view class="hint">不选择则暂存至校区负责人处</view>
+			</view>
 			<view class="field">
 				<text class="label">年级</text>
 				<picker :range="grades" @change="e => form.grade=grades[e.detail.value]">
@@ -101,11 +109,12 @@ export default {
 			units: UNITS,
 			subjects: [],
 			campuses: [],
+			teacherOptions: [],
 			selected: {}, // subject_id -> cfg
 			form: {
 				name: '', gender: '', school: '', grade: '',
 				guardian_name: '', guardian_phone: '', enrollment_date: '',
-				campus_id: null
+				campus_id: null, teacher_id: null
 			},
 			loading: false
 		};
@@ -120,13 +129,37 @@ export default {
 		campusName() {
 			const c = this.campuses.find(x => x.id === this.form.campus_id);
 			return c ? c.name : '';
+		},
+		teacherLabels() {
+			return ['暂存至校区负责人'].concat(this.teacherOptions.map(t => this.teacherLabel(t)));
+		},
+		teacherIds() {
+			return [null].concat(this.teacherOptions.map(t => t.id));
+		},
+		teacherName() {
+			if (this.form.teacher_id === null || this.form.teacher_id === undefined) return '暂存至校区负责人';
+			const t = this.teacherOptions.find(x => x.id === this.form.teacher_id);
+			return t ? this.teacherLabel(t) : '暂存至校区负责人';
 		}
 	},
 	onLoad() {
 		this.loadSubjects();
 		this.loadCampuses();
+		if (!this.store.isTeacher) this.loadTeachers();
 	},
 	methods: {
+		teacherLabel(t) {
+			let tag = '';
+			if (t.role === 'principal') tag = '· 校长';
+			else if (t.role === 'sub_principal' || t.role === 'campus_head') tag = '· 校区负责人';
+			return `${t.name}（${t.username}）${tag}`;
+		},
+		async loadTeachers() {
+			try {
+				const list = await get('/auth/teachers');
+				this.teacherOptions = (list || []).filter(t => t.is_active && !t.resigned);
+			} catch (e) {}
+		},
 		async loadCampuses() {
 			try {
 				this.campuses = await get('/campuses/options');

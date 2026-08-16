@@ -16,15 +16,15 @@ const routes = [
       { path: 'students', name: 'students', component: () => import('@/views/StudentList.vue'), meta: { title: '学生管理' } },
       // 已删除学生（校长）
       { path: 'deleted-students', name: 'deleted-students', component: () => import('@/views/DeletedStudents.vue'), meta: { title: '已删除学生', roles: ['principal'] } },
-      // 收费管理（总校长 + 校区负责人，数据范围自动限定）
+      // 收费管理（校长 + 校区负责人，数据范围自动限定）
       { path: 'income', name: 'income', component: () => import('@/views/IncomeManage.vue'), meta: { title: '收费管理', roles: ['principal', 'sub_principal', 'campus_head'] } },
-      // 教师账号管理（总校长 + 校区负责人）
+      // 教师账号管理（校长 + 校区负责人）
       { path: 'teachers', name: 'teachers', component: () => import('@/views/TeacherManage.vue'), meta: { title: '教师管理', roles: ['principal', 'sub_principal', 'campus_head'] } },
-      // 学科管理（总校长可增删改；校区负责人可查看）
+      // 学科管理（校长可增删改；校区负责人可查看）
       { path: 'subjects', name: 'subjects', component: () => import('@/views/SubjectManage.vue'), meta: { title: '学科管理', roles: ['principal', 'sub_principal', 'campus_head'] } },
       // 积分系统
       { path: 'points', name: 'points', component: () => import('@/views/PointsSystem.vue'), meta: { title: '积分奖励' } },
-      // 校区管理（总校长 + 校区负责人）
+      // 校区管理（校长 + 校区负责人）
       { path: 'campuses', name: 'campuses', component: () => import('@/views/CampusManage.vue'), meta: { title: '校区管理', roles: ['principal', 'sub_principal', 'campus_head'] } },
       // 平台管理（平台管理员）
       { path: 'platform', name: 'platform', component: () => import('@/views/PlatformManage.vue'), meta: { title: '机构开户管理', roles: ['platform'] } },

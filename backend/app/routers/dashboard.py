@@ -19,7 +19,7 @@ FEE_REMIND_DAYS = 5  # 提前 5 天提醒学生费用即将到期
 
 
 def _scope_students(q, db: Session, current_user: User):
-    """按角色限定学生数据范围（教师=自己负责；校区负责人=管辖校区（可多校区）；总校长归属校区后=本校区）"""
+    """按角色限定学生数据范围（教师=自己负责；校区负责人=管辖校区（可多校区）；校长归属校区后=本校区）"""
     if current_user.role == UserRole.TEACHER:
         return q.filter(Student.teacher_id == current_user.id)
     if is_head_role(current_user.role):
@@ -31,7 +31,7 @@ def _scope_students(q, db: Session, current_user: User):
 
 
 def _is_finance_visible(current_user: User) -> bool:
-    """是否可查看收入数据：教师不可见（收入置 0），校区负责人/总校长可见"""
+    """是否可查看收入数据：教师不可见（收入置 0），校区负责人/校长可见"""
     return current_user.role != UserRole.TEACHER
 
 
@@ -114,7 +114,7 @@ def dashboard_overview(current_user: User = Depends(get_current_user), db: Sessi
 
 
 def _fee_expire_reminders(db: Session, current_user: User, today: date):
-    """返回费用到期提醒列表。总校长看全部（归属校区后看本校区），校区负责人看本校区，教师只看自己负责的学生。"""
+    """返回费用到期提醒列表。校长看全部（归属校区后看本校区），校区负责人看本校区，教师只看自己负责的学生。"""
     student_q = db.query(Student).filter(Student.org_id == current_user.org_id, Student.deleted == False)  # noqa: E712
     student_q = _scope_students(student_q, db, current_user)
     students = student_q.all()
@@ -198,8 +198,8 @@ def attendance_summary(
 ):
     """月度考勤汇总：
     - 教师：汇总自己名下全部学生的考勤（含每日明细供日历展示）+ 自己的上下班打卡
-    - 校区负责人：只汇总本校区全部教师上下班打卡（上班未按时打卡整体标记「迟到」，不再展示全部学生）
-    - 总校长：不展示学生/教师打卡信息
+    - 校区负责人：汇总自己名下学生的考勤（与教师同口径）+ 本校区全部教师上下班打卡汇总
+    - 校长：汇总自己名下学生的考勤（校长也可拥有自己的学生）
     """
     today = date.today()
     if month and len(month) == 7:
@@ -213,52 +213,42 @@ def attendance_summary(
     end = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
     is_current_month = (y == today.year and m == today.month)
 
-    # 总校长不需要展示学生/教师打卡信息（本校区教师考勤由校区负责人负责查看）
-    if current_user.role == UserRole.PRINCIPAL:
-        return {
-            "month": f"{y:04d}-{m:02d}",
-            "students": [],
-            "teachers": [],
-            "summary": {
-                "student_count": 0,
-                "student_attendance_count": 0,
-                "teacher_count": 0,
-                "teacher_late_count": 0,
-                "teacher_absent_count": 0,
-            },
-        }
-
-    # ---- 学生考勤汇总（仅教师可见；校区负责人不再展示本校区全部学生）----
+    # ---- 学生考勤汇总（教师/校长/校区负责人均按自己名下学生；校区负责人保留本校区教师汇总）----
     students = []
     student_summary = []
     att_records = []
-    if not is_head_role(current_user.role):
-        student_q = db.query(Student).filter(Student.org_id == current_user.org_id, Student.deleted == False)  # noqa: E712
+    # 教师：自己负责的学生；校长/校区负责人：同样按 teacher_id=自己（可拥有自己的学生）
+    student_q = db.query(Student).filter(Student.org_id == current_user.org_id, Student.deleted == False)  # noqa: E712
+    if current_user.role in (UserRole.TEACHER, UserRole.PRINCIPAL) or is_head_role(current_user.role):
+        student_q = student_q.filter(Student.teacher_id == current_user.id)
+    else:
         student_q = _scope_students(student_q, db, current_user)
-        students = student_q.all()
-        student_ids = [s.id for s in students]
-        if student_ids:
-            att_records = db.query(Attendance).filter(
-                Attendance.org_id == current_user.org_id,
-                Attendance.student_id.in_(student_ids),
-                Attendance.date >= start,
-                Attendance.date < end,
-            ).order_by(Attendance.date, Attendance.id).all()
-        name_map = {s.id: s.name for s in students}
-        by_student: dict[int, dict] = {}
-        for r in att_records:
-            b = by_student.setdefault(r.student_id, {"normal": 0, "late": 0, "absent": 0, "leave": 0, "early": 0, "total": 0, "records": []})
-            key = {"正常": "normal", "迟到": "late", "缺勤": "absent", "请假": "leave", "早退": "early"}.get(r.status, "normal")
-            b[key] += 1
-            b["total"] += 1
-            b["records"].append({"date": r.date.isoformat(), "status": r.status})
-        student_summary = [
-            {"student_id": sid, "student_name": name_map.get(sid, ""), **counts}
-            for sid, counts in by_student.items()
-        ]
+    students = student_q.all()
+    student_ids = [s.id for s in students]
+    if student_ids:
+        att_records = db.query(Attendance).filter(
+            Attendance.org_id == current_user.org_id,
+            Attendance.student_id.in_(student_ids),
+            Attendance.date >= start,
+            Attendance.date < end,
+        ).order_by(Attendance.date, Attendance.id).all()
+    name_map = {s.id: s.name for s in students}
+    by_student: dict[int, dict] = {}
+    for r in att_records:
+        b = by_student.setdefault(r.student_id, {"normal": 0, "late": 0, "absent": 0, "leave": 0, "early": 0, "total": 0, "records": []})
+        key = {"正常": "normal", "迟到": "late", "缺勤": "absent", "请假": "leave", "早退": "early"}.get(r.status, "normal")
+        b[key] += 1
+        b["total"] += 1
+        b["records"].append({"date": r.date.isoformat(), "status": r.status})
+    student_summary = [
+        {"student_id": sid, "student_name": name_map.get(sid, ""), **counts}
+        for sid, counts in by_student.items()
+    ]
 
-    # ---- 教师上下班考勤汇总（整体标记）----
-    if current_user.role == UserRole.TEACHER:
+    # ---- 教师上下班考勤汇总（整体标记；校长不展示）----
+    if current_user.role == UserRole.PRINCIPAL:
+        teacher_list = []
+    elif current_user.role == UserRole.TEACHER:
         teacher_list = [current_user]
     elif is_head_role(current_user.role):
         managed = managed_campus_ids(db, current_user) or set()

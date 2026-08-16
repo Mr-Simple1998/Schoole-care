@@ -69,6 +69,14 @@
           <el-tag v-if="myClock" size="small" :type="myClock.status === '正常' ? 'success' : 'warning'">{{ myClock.status }}</el-tag>
         </div>
         <div class="clock-btns">
+          <el-date-picker
+            v-model="clockDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="打卡日期（可补卡）"
+            style="width: 150px; margin-right: 8px"
+            :clearable="false"
+          />
           <el-button type="primary" :loading="clockLoading" @click="doClock('in')">上班打卡</el-button>
           <el-button type="warning" :loading="clockLoading" @click="doClock('out')">下班打卡</el-button>
         </div>
@@ -78,8 +86,8 @@
       </div>
     </el-card>
 
-    <!-- 本月学生考勤（日历·教师端） -->
-    <el-card v-if="userStore.isTeacher && attendanceSummary.students && attendanceSummary.students.length" shadow="never" class="mt-16">
+    <!-- 本月学生考勤（日历·教师/校长/校区负责人：查看自己所负责学生的考勤） -->
+    <el-card v-if="(userStore.isTeacher || userStore.isPrincipal || userStore.isSubPrincipal) && attendanceSummary.students && attendanceSummary.students.length" shadow="never" class="mt-16">
       <template #header>
         <div class="att-head">
           <div class="card-title">本月学生考勤（日历）</div>
@@ -106,7 +114,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="s in attendanceSummary.students" :key="s.student_id">
+            <tr v-for="s in attPageStudents" :key="s.student_id">
               <td class="cal-name">{{ s.student_name }}</td>
               <td v-for="d in monthDays" :key="d.dayStr" class="cal-cell" :title="s.student_name + ' ' + d.dayStr + ' ' + (cellStatus(s, d.dayStr) || '未记录')">
                 <i class="cal-dot" :class="'is-' + statusClass(cellStatus(s, d.dayStr))"></i>
@@ -114,6 +122,15 @@
             </tr>
           </tbody>
         </table>
+      </div>
+      <div v-if="attPageTotal > ATT_PAGE_SIZE" class="att-pager">
+        <el-pagination
+          layout="prev, pager, next"
+          :total="attPageTotal"
+          :page-size="ATT_PAGE_SIZE"
+          :current-page="attPage"
+          @current-change="attPageChange"
+        />
       </div>
     </el-card>
 
@@ -141,7 +158,7 @@
       </el-table>
     </el-card>
 
-    <!-- 图表区（收入趋势仅总校长/校区负责人可见本校区收入） -->
+    <!-- 图表区（收入趋势仅校长/校区负责人可见本校区收入） -->
     <el-row v-if="userStore.isPrincipal || userStore.isSubPrincipal" :gutter="16" class="mt-16">
       <el-col :span="16">
         <el-card shadow="never">
@@ -247,8 +264,20 @@ const overview = ref({})
 const subjectStats = ref({ subject_counts: [], category_counts: {}, total_students: 0 })
 const animatedValues = reactive({})
 const attendanceSummary = ref({})
+const attPage = ref(1)
+const ATT_PAGE_SIZE = 10
+const attPageStudents = computed(() => {
+  const all = attendanceSummary.value.students || []
+  const start = (attPage.value - 1) * ATT_PAGE_SIZE
+  return all.slice(start, start + ATT_PAGE_SIZE)
+})
+const attPageTotal = computed(() => (attendanceSummary.value.students || []).length)
+function attPageChange(p) {
+  attPage.value = p
+}
 const myClock = ref(null)
 const clockLoading = ref(false)
+const clockDate = ref(todayStr())
 const myStudents = ref([])
 const attVisible = ref(false)
 const attSaving = ref(false)
@@ -333,16 +362,17 @@ async function loadData() {
   }
   subjectStats.value = await request.get('/subjects/stats')
   renderSubjectCharts()
-  // 月度考勤汇总（教师/校区负责人）+ 教师今日打卡；总校长不展示打卡信息
+  // 月度考勤汇总（教师/校长/校区负责人：查看自己所负责学生的考勤）+ 教师今日打卡
   try {
-    if (!userStore.isPrincipal) {
-      attendanceSummary.value = await request.get('/dashboard/attendance-summary')
-      if (userStore.isTeacher) {
-        const list = await request.get('/learning/teacher-attendance')
-        const today = todayStr()
-        myClock.value = list.find((x) => x.date === today) || null
-        myStudents.value = await request.get('/students')
-      }
+    attendanceSummary.value = await request.get('/dashboard/attendance-summary')
+    attPage.value = 1
+    if (userStore.isTeacher || userStore.isPrincipal || userStore.isSubPrincipal) {
+      myStudents.value = await request.get('/students')
+    }
+    if (userStore.isTeacher) {
+      const list = await request.get('/learning/teacher-attendance')
+      const today = todayStr()
+      myClock.value = list.find((x) => x.date === today) || null
     }
   } catch (e) {
     attendanceSummary.value = {}
@@ -359,7 +389,9 @@ function todayStr() {
 async function doClock(action) {
   clockLoading.value = true
   try {
-    myClock.value = await request.post('/learning/teacher-attendance', { action })
+    const payload = { action }
+    if (clockDate.value) payload.date = clockDate.value
+    myClock.value = await request.post('/learning/teacher-attendance', payload)
     ElMessage.success(action === 'in' ? '上班打卡成功' : '下班打卡成功')
   } finally {
     clockLoading.value = false
@@ -699,6 +731,7 @@ onBeforeUnmount(() => {
 .cal-day.is-today { background: #ecfdf5; color: #059669; font-weight: 700; }
 .cal-cell { padding: 4px 2px; }
 .cal-cell .cal-dot { display: block; margin: 0 auto; }
+.att-pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 /* transitions */
 .slide-down-enter-active { transition: all 0.4s ease-out; }
 .slide-down-leave-active { transition: all 0.3s ease-in; }

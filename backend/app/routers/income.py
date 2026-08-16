@@ -1,4 +1,4 @@
-﻿from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 def _scope_income_students(q, db: Session, current_user: User):
-    """按角色限定学生数据范围（教师=自己负责；校区负责人=管辖校区（可多校区）；总校长归属校区后=本校区）"""
+    """按角色限定学生数据范围（教师=自己负责；校区负责人=管辖校区（可多校区）；校长归属校区后=本校区）"""
     if current_user.role == UserRole.TEACHER:
         return q.join(Student).filter(Student.teacher_id == current_user.id)
     if is_head_role(current_user.role):
@@ -368,7 +368,7 @@ class InstallmentOut(BaseModel):
 
 @router.post("/installments", response_model=InstallmentOut, dependencies=[Depends(get_current_principal_or_head)])
 def create_installment(data: InstallmentCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """总校长/校区负责人：为学费创建分期计划"""
+    """校长/校区负责人：为学费创建分期计划"""
     student = db.query(Student).filter(Student.id == data.student_id).first()
     if not student:
         raise HTTPException(status_code=404, detail="学生不存在")

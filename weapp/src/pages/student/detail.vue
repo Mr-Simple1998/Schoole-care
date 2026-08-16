@@ -171,7 +171,7 @@
 			</view>
 		</view>
 
-		<!-- 更换负责教师弹窗（总校长/校区负责人：分配或暂存） -->
+		<!-- 更换负责教师弹窗（校长/校区负责人：分配或暂存） -->
 		<view class="mask" v-if="showTeacherPick" @click="showTeacherPick=false">
 			<view class="dialog" @click.stop>
 				<view class="dialog-title">更换负责教师</view>
@@ -244,7 +244,7 @@ export default {
 			return this.store.isPrincipal || this.store.isSubPrincipal;
 		},
 		teacherLabels() {
-			return ['暂存至校区负责人'].concat(this.teachers.map(t => `${t.name}（${t.username}）`));
+			return ['暂存至校区负责人'].concat(this.teachers.map(t => `${t.name}（${t.username}）${this.teacherRoleTag(t)}`));
 		},
 		teacherIds() {
 			return [null].concat(this.teachers.map(t => t.id));
@@ -252,7 +252,7 @@ export default {
 		selectedTeacherName() {
 			if (this.selectedTeacherId === null || this.selectedTeacherId === undefined) return '暂存至校区负责人';
 			const t = this.teachers.find(x => x.id === this.selectedTeacherId);
-			return t ? `${t.name}（${t.username}）` : '暂存至校区负责人';
+			return t ? `${t.name}（${t.username}）${this.teacherRoleTag(t)}` : '暂存至校区负责人';
 		},
 		subjectNames() {
 			return this.attendSubjects.map(s => s.name);
@@ -300,7 +300,15 @@ export default {
 		async loadAll() {
 			try {
 				this.student = await get('/students/' + this.id);
-				this.attendSubjects = this.student.subjects || [];
+				// 打卡学科：优先用课时会话（subject_sessions：subject_id/subject_name/remaining），否则退回学科列表（subjects：id/name）
+				const sessions = (this.student.subject_sessions && this.student.subject_sessions.length)
+					? this.student.subject_sessions
+					: (this.student.subjects || []);
+				this.attendSubjects = sessions.map(x => ({
+					id: x.subject_id != null ? x.subject_id : x.id,
+					name: x.subject_name || x.name || '',
+					remaining: x.remaining
+				}));
 				if (this.attendSubjects.length) this.attendSubjectId = this.attendSubjects[0].id;
 				this.scores = await get('/learning/scores', { student_id: this.id });
 				this.hwList = await get('/learning/homework', { student_id: this.id });
@@ -316,6 +324,11 @@ export default {
 		openTeacherPick() {
 			this.selectedTeacherId = (this.student && this.student.teacher_id) || null;
 			this.showTeacherPick = true;
+		},
+		teacherRoleTag(t) {
+			if (t.role === 'principal') return '· 校长';
+			if (t.role === 'sub_principal' || t.role === 'campus_head') return '· 校区负责人';
+			return '';
 		},
 		async doChangeTeacher() {
 			try {

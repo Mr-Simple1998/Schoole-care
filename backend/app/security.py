@@ -67,7 +67,7 @@ def require_role(*roles: UserRole):
 
 def get_current_principal(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != UserRole.PRINCIPAL:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅总校长可执行此操作")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅校长可执行此操作")
     return current_user
 
 
@@ -79,7 +79,7 @@ def is_head_role(role) -> bool:
 def managed_campus_ids(db, user) -> set | None:
     """当前用户可管辖的校区 id 集合。
 
-    - 总校长（principal）：返回 None（可管全部校区）
+    - 校长（principal）：返回 None（可管全部校区）
     - 校区负责人/其他角色：返回 {user.campus_id} ∪ campus_heads 关联表中的校区
     """
     if user.role == UserRole.PRINCIPAL:
@@ -94,9 +94,9 @@ def managed_campus_ids(db, user) -> set | None:
 
 
 def get_current_principal_or_head(current_user: User = Depends(get_current_user)) -> User:
-    """总校长或校区负责人可访问（校区负责人只能操作本校区数据）"""
+    """校长或校区负责人可访问（校区负责人只能操作本校区数据）"""
     if current_user.role not in (UserRole.PRINCIPAL, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅总校长或校区负责人可执行此操作")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅校长或校区负责人可执行此操作")
     return current_user
 
 

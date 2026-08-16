@@ -315,7 +315,7 @@ function hwType(s) {
 }
 
 // ===== 纯展示：概览统计与成绩配色（不改变任何业务逻辑） =====
-// 是否可给该学生打卡：总校长/校区负责人/教师的学生分开，只能给自己负责的学生打卡
+// 是否可给该学生打卡：校长/校区负责人/教师的学生分开，只能给自己负责的学生打卡
 const canCheckIn = computed(() => student.value.teacher_id === userStore.user?.id)
 const totalRemaining = computed(() =>
   (student.value.subject_sessions || []).reduce((a, s) => a + (s.remaining ?? 0), 0)

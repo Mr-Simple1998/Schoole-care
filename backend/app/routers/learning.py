@@ -49,8 +49,8 @@ def _check_student_teacher(db, student_id, current_user):
 
 
 def _check_student_own(db, student_id, current_user):
-    """打卡：总校长/校区负责人/教师的学生分开，各角色只能给自己负责的学生打卡
-    （teacher_id == 当前用户；总校长和校区负责人也可以拥有自己的学生）"""
+    """打卡：校长/校区负责人/教师的学生分开，各角色只能给自己负责的学生打卡
+    （teacher_id == 当前用户；校长和校区负责人也可以拥有自己的学生）"""
     student = db.query(Student).filter(
         Student.id == student_id,
         Student.org_id == current_user.org_id,
@@ -254,6 +254,7 @@ def list_attendance(student_id: int | None = None, current_user: User = Depends(
 # ---------- 教师上下班打卡 ----------
 class TeacherClockIn(BaseModel):
     action: str = "in"  # in=上班打卡 / out=下班打卡
+    date: DateType | None = None  # 打卡日期（默认当天；传过去日期=补卡）
 
 
 class TeacherAttendanceOut(BaseModel):
@@ -289,21 +290,22 @@ def _teacher_attendance_out(rec, work_start: str | None, work_end: str | None) -
 
 @router.post("/teacher-attendance", response_model=TeacherAttendanceOut)
 def teacher_clock(data: TeacherClockIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """教师工作台上下班打卡：上班未按时打卡会在月度汇总中整体标记为「迟到」"""
+    """教师工作台上下班打卡：上班未按时打卡会在月度汇总中整体标记为「迟到」。
+    date 可选：默认当天；传过去日期则补卡（时间仍取当前时刻）。"""
     if current_user.role != UserRole.TEACHER:
         raise HTTPException(status_code=403, detail="仅教师可进行上下班打卡")
-    today = DateType.today()
+    day = data.date or DateType.today()
     now = datetime.now().strftime("%H:%M")
     rec = db.query(TeacherAttendance).filter(
         TeacherAttendance.org_id == current_user.org_id,
         TeacherAttendance.user_id == current_user.id,
-        TeacherAttendance.date == today,
+        TeacherAttendance.date == day,
     ).first()
     if not rec:
         rec = TeacherAttendance(
             org_id=current_user.org_id,
             user_id=current_user.id,
-            date=today,
+            date=day,
             created_at=datetime.utcnow(),
         )
         db.add(rec)
@@ -326,7 +328,7 @@ def list_teacher_attendance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """教师查看自己的上下班打卡记录；校区负责人/总校长查看本校区（本机构）教师的打卡记录"""
+    """教师查看自己的上下班打卡记录；校区负责人/校长查看本校区（本机构）教师的打卡记录"""
     q = db.query(TeacherAttendance).filter(TeacherAttendance.org_id == current_user.org_id)
     if current_user.role == UserRole.TEACHER:
         q = q.filter(TeacherAttendance.user_id == current_user.id)

@@ -114,7 +114,7 @@
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="$router.push(`/student/${row.id}`)">学习档案</el-button>
-            <!-- 学生分开管理：各角色只能给自己负责的学生打卡（总校长/校区负责人/教师均可拥有自己的学生） -->
+            <!-- 学生分开管理：各角色只能给自己负责的学生打卡（校长/校区负责人/教师均可拥有自己的学生） -->
             <el-button v-if="row.teacher_id === userStore.user?.id" size="small" type="success" link @click="openAttendance(row)">打卡</el-button>
             <el-button size="small" link @click="openDialog(row)">编辑</el-button>
             <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
@@ -173,7 +173,7 @@
             <el-option
               v-for="t in teacherOptions"
               :key="t.id"
-              :label="`${t.name}（${t.username}）${t.role === 'sub_principal' || t.role === 'campus_head' ? '· 校区负责人' : t.role === 'principal' ? '· 总校长' : ''}`"
+              :label="`${t.name}（${t.username}）${t.role === 'sub_principal' || t.role === 'campus_head' ? '· 校区负责人' : t.role === 'principal' ? '· 校长' : ''}`"
               :value="t.id"
             />
           </el-select>
@@ -274,6 +274,9 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="日期">
+          <el-date-picker v-model="attForm.date" type="date" value-format="YYYY-MM-DD" placeholder="选择打卡日期（可补卡）" style="width:100%" :clearable="false" />
+        </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="attForm.status" style="width:100%">
             <el-option label="正常" value="正常" /><el-option label="迟到" value="迟到" /><el-option label="早退" value="早退" />
@@ -318,9 +321,9 @@ const formRef = ref()
 const attVisible = ref(false)
 const attSaving = ref(false)
 const attStudent = ref(null)
-const attForm = reactive({ subject_id: null, status: '正常', remark: '' })
+const attForm = reactive({ subject_id: null, date: todayStr(), status: '正常', remark: '' })
 
-// 总校长/校区负责人可分配负责教师
+// 校长/校区负责人可分配负责教师
 const canAssign = computed(() => userStore.isPrincipal || userStore.isSubPrincipal)
 
 // 学科按分类分组
@@ -448,7 +451,7 @@ async function loadTeacherOptions(campusId) {
 }
 
 function onCampusChange() {
-  loadTeacherOptions(form.campus_id)
+  if (canAssign.value) loadTeacherOptions(form.campus_id)
 }
 
 function onSelectionChange(rows) {
@@ -487,7 +490,7 @@ function openDialog(row) {
   // 把已选学科 id 填入 subject_ids
   form.subject_ids = (row?.subjects || []).map((s) => s.id)
   form.teacher_id = row?.teacher_id ?? null
-  loadTeacherOptions(form.campus_id)
+  if (canAssign.value) loadTeacherOptions(form.campus_id)  // 仅校长/校区负责人需负责人下拉；教师自动归属自己
   // 把已有课时配置填入 sessionMap
   form.sessionMap = {}
   form.expireMap = {}
@@ -568,6 +571,7 @@ function todayStr() {
 function openAttendance(row) {
   attStudent.value = row
   attForm.subject_id = null
+  attForm.date = todayStr()
   attForm.status = '正常'
   attForm.remark = ''
   attVisible.value = true
@@ -583,7 +587,7 @@ async function saveAttendance() {
     await request.post('/learning/attendance', {
       student_id: attStudent.value.id,
       subject_id: attForm.subject_id,
-      date: todayStr(),
+      date: attForm.date || todayStr(),
       status: attForm.status,
       remark: attForm.remark,
     })

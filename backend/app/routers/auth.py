@@ -21,7 +21,7 @@ class UserCreate(BaseModel):
     username: str
     password: str
     name: str
-    role: str = "teacher"  # 仅教师（总校长由平台开户创建；校区负责人由总校长在校区管理页开号）
+    role: str = "teacher"  # 仅教师（校长由平台开户创建；校区负责人由校长在校区管理页开号）
     email: str | None = None
     phone: str | None = None
     campus_id: int | None = None  # 所属校区（可选）
@@ -110,14 +110,14 @@ def _set_teacher_subjects(db: Session, user: User, subject_ids: list[int] | None
 
 @router.post("/register", response_model=UserOut)
 def register_teacher(data: UserCreate, current_user: User = Depends(get_current_principal_or_head), db: Session = Depends(get_db)):
-    """总校长/校区负责人创建教师账号（新增教师固定为教师角色；总校长由平台开户创建，校区负责人由总校长在校区管理页开号）"""
+    """校长/校区负责人创建教师账号（新增教师固定为教师角色；校长由平台开户创建，校区负责人由校长在校区管理页开号）"""
     if data.role != "teacher":
         raise HTTPException(status_code=400, detail="只能创建教师账号")
-    # 校区负责人/归属了校区的总校长：新建教师默认归属同一校区；多校区负责人可在其管辖校区中选择
+    # 校区负责人/归属了校区的校长：新建教师默认归属同一校区；多校区负责人可在其管辖校区中选择
     if is_head_role(current_user.role) or (current_user.role == UserRole.PRINCIPAL and current_user.campus_id):
         if current_user.role == UserRole.PRINCIPAL:
-            # 总校长管辖全部校区：保留所选校区（由下方校验是否属于本机构）；未指定时默认其归属校区，
-            # 避免新建教师无校区归属导致其新增学生在校长/总校长端不可见
+            # 校长管辖全部校区：保留所选校区（由下方校验是否属于本机构）；未指定时默认其归属校区，
+            # 避免新建教师无校区归属导致其新增学生在校长/校长端不可见
             if data.campus_id is None:
                 data.campus_id = current_user.campus_id
         else:
@@ -155,25 +155,25 @@ def list_teachers(
     current_user: User = Depends(get_current_principal_or_head),
     db: Session = Depends(get_db),
 ):
-    """总校长查看本机构教师/校区负责人（可按校区筛选）；校区负责人仅见本校区（可多校区）教师。
-    含总校长本人：总校长/校区负责人也可以拥有自己的学生，可作为学生的负责教师被选择。"""
+    """校长查看本机构全部账号（校长/校区负责人/教师，可按校区筛选）；校区负责人仅见本校区（可多校区）教师。
+    含校长本人：校长/校区负责人也可以拥有自己的学生，可作为学生的负责教师被选择。"""
     q = db.query(User).filter(
         User.role.in_([UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD, UserRole.PRINCIPAL]),
         User.org_id == current_user.org_id,
     )
-    if is_head_role(current_user.role):
+    if current_user.role == UserRole.PRINCIPAL:
+        # 校长：可见机构全部账号（含各校区负责人及其所属校区的教师），可按校区筛选
+        if campus_id is not None:
+            q = q.filter(User.campus_id == campus_id)
+    elif is_head_role(current_user.role):
         managed = managed_campus_ids(db, current_user) or set()
         q = q.filter(User.campus_id.in_(managed))
-    elif current_user.role == UserRole.PRINCIPAL and current_user.campus_id:
-        q = q.filter(User.campus_id == current_user.campus_id)
-    elif campus_id is not None:
-        q = q.filter(User.campus_id == campus_id)
     return [_user_out(u) for u in q.order_by(User.id).all()]
 
 
 @router.get("/users", response_model=list[UserOut])
 def list_users(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """账号列表（总校长见机构全部；校区负责人见本校区全部（可多校区）；教师仅见自己）"""
+    """账号列表（校长见机构全部；校区负责人见本校区全部（可多校区）；教师仅见自己）"""
     if current_user.role == UserRole.PRINCIPAL:
         return [_user_out(u) for u in db.query(User).filter(User.org_id == current_user.org_id).all()]
     if is_head_role(current_user.role):
@@ -185,7 +185,7 @@ def list_users(current_user: User = Depends(get_current_user), db: Session = Dep
 
 @router.delete("/users/{user_id}", response_model=UserOut)
 def delete_user(user_id: int, current_user: User = Depends(get_current_principal_or_head), db: Session = Depends(get_db)):
-    """总校长/校区负责人：停用本机构（本校区）账号"""
+    """校长/校区负责人：停用本机构（本校区）账号"""
     q = db.query(User).filter(User.id == user_id, User.org_id == current_user.org_id)
     if is_head_role(current_user.role):
         # 校区负责人只能停用本校区教师账号
@@ -202,14 +202,14 @@ def delete_user(user_id: int, current_user: User = Depends(get_current_principal
 
 @router.delete("/teachers/{user_id}")
 def delete_teacher(user_id: int, current_user: User = Depends(get_current_principal_or_head), db: Session = Depends(get_db)):
-    """总校长/校区负责人：删除本机构（本校区）教师账号。该账号名下有在读学生时禁止删除（请先办理离职，学生将自动暂存校区）。"""
+    """校长/校区负责人：删除本机构（本校区）教师账号。该账号名下有在读学生时禁止删除（请先办理离职，学生将自动暂存校区）。"""
     q = db.query(User).filter(
         User.id == user_id,
         User.org_id == current_user.org_id,
         User.role.in_([UserRole.TEACHER, UserRole.SUB_PRINCIPAL, UserRole.CAMPUS_HEAD]),
     )
     if is_head_role(current_user.role):
-        # 校区负责人只能删除本校区教师账号（不可删除校长管理号）
+        # 校区负责人只能删除本校区教师账号（不可删除校区负责人）
         managed = managed_campus_ids(db, current_user) or set()
         q = q.filter(User.campus_id.in_(managed), User.role == UserRole.TEACHER)
     user = q.first()
@@ -235,10 +235,10 @@ def delete_teacher(user_id: int, current_user: User = Depends(get_current_princi
 
 @router.put("/users/{user_id}", response_model=UserOut)
 def update_user(user_id: int, data: UserUpdate, current_user: User = Depends(get_current_principal_or_head), db: Session = Depends(get_db)):
-    """总校长/校区负责人：编辑本机构（本校区）教师账号信息及其所属学科；重新启用离职账号时清除离职标记"""
+    """校长/校区负责人：编辑本机构（本校区）教师账号信息及其所属学科；重新启用离职账号时清除离职标记"""
     q = db.query(User).filter(User.id == user_id, User.org_id == current_user.org_id)
     if is_head_role(current_user.role):
-        # 校区负责人只能编辑本校区教师账号（不可编辑校长管理号）
+        # 校区负责人只能编辑本校区教师账号（不可编辑校区负责人）
         managed = managed_campus_ids(db, current_user) or set()
         q = q.filter(User.campus_id.in_(managed), User.role == UserRole.TEACHER)
     user = q.first()
@@ -280,7 +280,7 @@ def update_teacher_work_time(
     current_user: User = Depends(get_current_principal_or_head),
     db: Session = Depends(get_db),
 ):
-    """总校长/校区负责人：设置教师的上下班打卡时间，用于教师工作台打卡与月度考勤汇总标记"""
+    """校长/校区负责人：设置教师的上下班打卡时间，用于教师工作台打卡与月度考勤汇总标记"""
     q = db.query(User).filter(User.id == user_id, User.org_id == current_user.org_id)
     if is_head_role(current_user.role):
         # 校区负责人只能设置本校区教师
@@ -305,10 +305,10 @@ def reset_teacher_password(
     current_user: User = Depends(get_current_principal_or_head),
     db: Session = Depends(get_db),
 ):
-    """总校长/校区负责人：重置本机构（本校区）教师密码（教师忘记密码时使用）"""
+    """校长/校区负责人：重置本机构（本校区）教师密码（教师忘记密码时使用）"""
     q = db.query(User).filter(User.id == user_id, User.org_id == current_user.org_id)
     if is_head_role(current_user.role):
-        # 校区负责人只能重置本校区教师密码（不可重置校长管理号）
+        # 校区负责人只能重置本校区教师密码（不可重置校区负责人）
         managed = managed_campus_ids(db, current_user) or set()
         q = q.filter(User.campus_id.in_(managed), User.role == UserRole.TEACHER)
     user = q.first()
@@ -324,21 +324,21 @@ def reset_teacher_password(
 @router.post("/users/{user_id}/resign")
 def resign_user(user_id: int, current_user: User = Depends(get_current_principal_or_head), db: Session = Depends(get_db)):
     """办理离职：停用账号并标记离职；其名下所有学生数据全部保留，暂存至学生所属校区（teacher_id 置空），
-    由总校长/校区负责人后续分配给其他教师或新账号。
+    由校长/校区负责人后续分配给其他教师或新账号。
 
-    - 校区负责人离职：校区全部数据（学生/教师/收支/收费记录）原样保留，总校长可重新建号后自动接管
+    - 校区负责人离职：校区全部数据（学生/教师/收支/收费记录）原样保留，校长可重新建号后自动接管
     - 教师离职：名下学生暂存至校区负责人处（校区可见、可再分配）
     """
     q = db.query(User).filter(User.id == user_id, User.org_id == current_user.org_id)
     if is_head_role(current_user.role):
-        # 校区负责人只能办理本校区教师离职（负责人离职由总校长在“校区管理-负责人”中办理）
+        # 校区负责人只能办理本校区教师离职（负责人离职由校长在“校区管理-负责人”中办理）
         managed = managed_campus_ids(db, current_user) or set()
         q = q.filter(User.campus_id.in_(managed), User.role == UserRole.TEACHER)
     user = q.first()
     if not user:
         raise HTTPException(status_code=404, detail="账号不存在")
     if user.role == UserRole.PRINCIPAL:
-        raise HTTPException(status_code=400, detail="总校长为机构所有者，不可办理离职")
+        raise HTTPException(status_code=400, detail="校长为机构所有者，不可办理离职")
     if user.role == UserRole.PLATFORM:
         raise HTTPException(status_code=400, detail="平台管理员不可办理离职")
 

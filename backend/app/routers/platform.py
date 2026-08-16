@@ -93,7 +93,7 @@ def _org_overview(db: Session, org_id: int, month_start: date, today: date) -> d
     active_student_count = db.query(Student).filter(
         Student.org_id == org_id, Student.deleted == False, Student.status == "在读"  # noqa: E712
     ).count()
-    # 教师（含校区负责人/校长管理号）
+    # 教师（含校区负责人/校区负责人）
     teacher_count = db.query(User).filter(
         User.org_id == org_id,
         User.is_active == True,  # noqa: E712
