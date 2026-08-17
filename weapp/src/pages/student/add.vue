@@ -72,17 +72,17 @@
 				</view>
 				<view v-if="isSelected(sub.id)" class="session-config">
 					<radio-group class="flex" @change="e => setMode(sub.id, e.detail.value)">
-						<label class="radio-item"><radio value="sessions" :checked="getCfg(sub.id).mode==='sessions'" />按课时核销</label>
-						<label class="radio-item"><radio value="duration" :checked="getCfg(sub.id).mode==='duration'" />按到期时间</label>
+						<label class="radio-item"><radio value="sessions" :checked="cfg(sub.id).mode==='sessions'" />按课时核销</label>
+						<label class="radio-item"><radio value="duration" :checked="cfg(sub.id).mode==='duration'" />按到期时间</label>
 					</radio-group>
-					<view v-if="getCfg(sub.id).mode==='sessions'" class="flex session-input-row">
-						<input class="input small" type="number" v-model="getCfg(sub.id).total_sessions" placeholder="总课时数" />
+					<view v-if="cfg(sub.id).mode==='sessions'" class="flex session-input-row">
+						<input class="input small" type="number" v-model="cfg(sub.id).total_sessions" placeholder="总课时数" />
 						<text class="unit-text">次</text>
 					</view>
 					<view v-else class="flex session-input-row">
-						<input class="input small" type="number" v-model="getCfg(sub.id).duration_value" placeholder="时长" />
-						<picker :range="units" @change="e => getCfg(sub.id).duration_unit=units[e.detail.value]">
-							<view class="unit">{{ getCfg(sub.id).duration_unit }}</view>
+						<input class="input small" type="number" v-model="cfg(sub.id).duration_value" placeholder="时长" />
+						<picker :range="units" @change="e => cfg(sub.id).duration_unit=units[e.detail.value]">
+							<view class="unit">{{ cfg(sub.id).duration_unit }}</view>
 						</picker>
 					</view>
 				</view>
@@ -110,7 +110,10 @@ export default {
 			subjects: [],
 			campuses: [],
 			teacherOptions: [],
-			selected: {}, // subject_id -> cfg
+			// 勾选中的学科 id 列表
+			selectedIds: [],
+			// 每个学科的课时配置（加载学科时一次性预创建，避免渲染期写响应式状态）
+			cfgs: {},
 			form: {
 				name: '', gender: '', school: '', grade: '',
 				guardian_name: '', guardian_phone: '', enrollment_date: '',
@@ -168,31 +171,33 @@ export default {
 		async loadSubjects() {
 			try {
 				this.subjects = await get('/subjects');
+				// 预创建全部学科的配置对象，渲染时只读，不再写状态
+				const cfgs = {};
+				(this.subjects || []).forEach(s => {
+					cfgs[s.id] = { mode: 'sessions', total_sessions: '', duration_value: '', duration_unit: '天' };
+				});
+				this.cfgs = cfgs;
 			} catch (e) {}
 		},
-		isSelected(id) { return !!this.selected[id]; },
-		getCfg(id) {
-			if (!this.selected[id]) {
-				this.selected[id] = { mode: 'sessions', total_sessions: '', duration_value: '', duration_unit: '天' };
-			}
-			return this.selected[id];
-		},
+		isSelected(id) { return this.selectedIds.indexOf(id) > -1; },
+		// 纯读取：返回该学科的配置对象（loadSubjects 时已预创建）
+		cfg(id) { return this.cfgs[id]; },
 		toggleSubject(id, e) {
 			if (e.length) {
-				this.getCfg(id);
+				if (this.selectedIds.indexOf(id) === -1) this.selectedIds.push(id);
 			} else {
-				delete this.selected[id];
+				this.selectedIds = this.selectedIds.filter(x => x !== id);
 			}
 		},
-		setMode(id, mode) { this.getCfg(id).mode = mode; },
+		setMode(id, mode) { this.cfg(id).mode = mode; },
 		async submit() {
 			if (!this.form.name) {
 				uni.showToast({ title: '请填写姓名', icon: 'none' });
 				return;
 			}
-			const subjectIds = Object.keys(this.selected).map(Number);
+			const subjectIds = this.selectedIds;
 			const subjectSessions = subjectIds.map(sid => {
-				const c = this.selected[sid];
+				const c = this.cfgs[sid];
 				if (c.mode === 'sessions') {
 					return { subject_id: sid, total_sessions: Number(c.total_sessions) || null };
 				}

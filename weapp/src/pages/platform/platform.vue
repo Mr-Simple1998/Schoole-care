@@ -30,7 +30,7 @@
 		</view>
 
 		<!-- 机构列表 -->
-		<view class="card org-card" v-for="o in organizations" :key="o.id">
+		<view class="card org-card" v-for="o in pagedOrgs" :key="o.id">
 			<view class="org-head">
 				<view class="org-title">
 					<text class="org-name">{{ o.name }}</text>
@@ -103,6 +103,14 @@
 			</view>
 		</view>
 		<view v-if="!organizations.length" class="empty">暂无机构，点击上方「新校长开户」创建</view>
+
+		<!-- 机构列表分页 -->
+		<view v-if="pagedOrgs.length && organizations.length > pagedOrgs.length" class="load-more" @click="loadMoreOrgs">
+			<text>已加载 {{ pagedOrgs.length }} / {{ organizations.length }} 家机构，点击加载更多</text>
+		</view>
+		<view v-else-if="pagedOrgs.length" class="load-more all-loaded">
+			<text>已全部加载（共 {{ organizations.length }} 家）</text>
+		</view>
 
 		<!-- 开户流水统计 -->
 		<view class="card">
@@ -323,6 +331,9 @@ export default {
 			store: useUserStore(),
 			organizations: [],
 			stat: {},
+			// 机构列表前端分页（机构卡片含运营概况，较多时避免整页渲染卡顿）
+			pageSize: 10,
+			visibleCount: 10,
 			saving: false,
 			showCreate: false,
 			showEdit: false,
@@ -353,6 +364,9 @@ export default {
 		},
 		expiredCount() {
 			return this.organizations.filter(o => o.expire_status === 'expired').length;
+		},
+		pagedOrgs() {
+			return this.organizations.slice(0, this.visibleCount);
 		}
 	},
 	onShow() {
@@ -361,9 +375,17 @@ export default {
 	onPullDownRefresh() {
 		this.loadData().then(() => uni.stopPullDownRefresh());
 	},
+	onReachBottom() {
+		this.loadMoreOrgs();
+	},
 	methods: {
 		fmt(n) {
 			return Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+		},
+		loadMoreOrgs() {
+			if (this.visibleCount < this.organizations.length) {
+				this.visibleCount += this.pageSize;
+			}
 		},
 		planTypeText(v) {
 			const t = PLAN_TYPES.find(x => x.value === v);
@@ -409,6 +431,7 @@ export default {
 		async loadData() {
 			try {
 				this.organizations = await get('/platform/organizations');
+				this.visibleCount = this.pageSize;
 				this.stat = await get('/platform/payments/statistics');
 			} catch (e) {}
 		},
@@ -648,6 +671,13 @@ export default {
 .link.warn { color: #e6a23c; }
 .link.danger { color: #ef4444; }
 .empty { text-align: center; color: #c0c4cc; padding: 40rpx 0; font-size: 26rpx; }
+.load-more {
+	text-align: center;
+	padding: 12rpx 0 4rpx;
+	font-size: 24rpx;
+	color: #10b981;
+}
+.load-more.all-loaded { color: #c0c4cc; }
 .no-margin { margin: 0; }
 .due-block { margin-top: 8rpx; }
 

@@ -65,6 +65,15 @@
 
 		<!-- 机构账号：原工作台内容 -->
 		<template v-else>
+			<!-- 首屏加载骨架：避免白屏与数据跳变 -->
+			<view v-if="loading && !overview.total_students" class="skeleton">
+				<view class="skeleton-grid">
+					<view v-for="i in 4" :key="i" class="skeleton-card"></view>
+				</view>
+				<view class="skeleton-block"></view>
+				<view class="skeleton-block"></view>
+			</view>
+
 			<!-- 到期提醒横幅 -->
 			<view v-if="overview.fee_expire_reminders && overview.fee_expire_reminders.length" class="banner" :class="hasExpired ? 'is-danger' : 'is-warn'">
 				<view>
@@ -227,7 +236,8 @@ export default {
 			attPageSize: 10,
 			myClock: null,
 			clockLoading: false,
-			clockDate: ''
+			clockDate: '',
+			loading: false
 		};
 	},
 	computed: {
@@ -272,16 +282,27 @@ export default {
 			uni.reLaunch({ url: '/pages/platform/platform' });
 			return;
 		}
-		this.loadOverview();
-		this.loadAttendanceSummary();
-		if (this.store.isTeacher) {
-			this.clockDate = this.todayStr();
-			this.loadTeacherClock();
-		}
+		this.loadAll();
+	},
+	onPullDownRefresh() {
+		this.loadAll(true).then(() => uni.stopPullDownRefresh());
 	},
 	methods: {
 		fmt(n) {
 			return Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+		},
+		// 并行加载：概览 / 考勤汇总 / 教师打卡同时请求，减少等待时间
+		async loadAll(refresh = false) {
+			if (!refresh) this.loading = true;
+			try {
+				await Promise.all([
+					this.loadOverview(),
+					this.loadAttendanceSummary(),
+					this.store.isTeacher ? this.loadTeacherClock() : Promise.resolve()
+				]);
+			} finally {
+				this.loading = false;
+			}
 		},
 		async loadOverview() {
 			try {
@@ -302,6 +323,7 @@ export default {
 		},
 		async loadTeacherClock() {
 			try {
+				if (!this.clockDate) this.clockDate = this.todayStr();
 				const today = new Date().toISOString().slice(0, 10);
 				const list = await get('/learning/teacher-attendance');
 				this.myClock = list.find(x => x.date === today) || null;
@@ -345,6 +367,35 @@ export default {
 
 <style scoped>
 .page { padding-bottom: 40rpx; }
+.skeleton { padding: 20rpx; }
+.skeleton-grid {
+	display: flex;
+	flex-wrap: wrap;
+	margin-bottom: 20rpx;
+}
+.skeleton-card {
+	width: calc(50% - 10rpx);
+	height: 140rpx;
+	margin-right: 20rpx;
+	margin-bottom: 20rpx;
+	background: linear-gradient(90deg, #f0f0f0 25%, #f8f8f8 50%, #f0f0f0 75%);
+	background-size: 200% 100%;
+	animation: sk-shimmer 1.2s infinite;
+	border-radius: 16rpx;
+}
+.skeleton-card:nth-child(2n) { margin-right: 0; }
+.skeleton-block {
+	height: 200rpx;
+	margin-bottom: 20rpx;
+	background: linear-gradient(90deg, #f0f0f0 25%, #f8f8f8 50%, #f0f0f0 75%);
+	background-size: 200% 100%;
+	animation: sk-shimmer 1.2s infinite;
+	border-radius: 16rpx;
+}
+@keyframes sk-shimmer {
+	0% { background-position: 200% 0; }
+	100% { background-position: -200% 0; }
+}
 .welcome {
 	background: linear-gradient(135deg, #10b981, #059669);
 	color: #fff;

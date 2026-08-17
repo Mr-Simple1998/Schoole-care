@@ -47,13 +47,13 @@
 		</view>
 
 		<view class="search-bar">
-			<input class="search-input" v-model="keyword" placeholder="搜索姓名/学号" @input="filterList" />
+			<input class="search-input" v-model="keyword" placeholder="搜索姓名/学号" />
 			<button v-if="store.isTeacher" class="btn-ghost att-btn" @click="goAttendance">考勤</button>
 			<button class="btn-primary add-btn" @click="goAdd">新增</button>
 		</view>
 
-		<view v-if="filtered.length" class="student-list">
-			<view v-for="s in filtered" :key="s.id" class="card student-item">
+		<view v-if="pagedStudents.length" class="student-list">
+			<view v-for="s in pagedStudents" :key="s.id" class="card student-item">
 				<view class="flex" @click="goDetail(s.id)">
 					<view class="avatar">{{ s.name[0] }}</view>
 					<view class="flex-1 info-row ir-body">
@@ -68,6 +68,12 @@
 						</view>
 						<view class="ir-right">
 							<text :class="s.status === '在读' ? 'tag tag-success' : 'tag tag-grey'">{{ s.status || '未知' }}</text>
+							<!-- 补卡：与打卡共用打卡弹窗，可补打过去任意日期（仅本人负责的学生） -->
+							<button
+								v-if="s.teacher_id === store.user.id"
+								class="makeup-btn"
+								@click="openAttend(s, true)"
+							>补卡</button>
 						</view>
 					</view>
 				</view>
@@ -76,15 +82,33 @@
 					<text v-for="sub in s.subjects" :key="sub.id" class="sub-tag">{{ sub.name }}</text>
 				</view>
 				<!-- 学生分开管理：各角色只能给自己负责的学生打卡（校长/校区负责人/教师均可拥有自己的学生） -->
-				<button v-if="s.teacher_id === store.user.id" class="btn-primary attend-btn" @click="openAttend(s)">打卡</button>
+				<button
+					v-if="s.teacher_id === store.user.id"
+					class="btn-primary attend-btn"
+					:class="{ 'is-done': s.attended_today }"
+					:disabled="s.attended_today"
+					@click="openAttend(s)"
+				>{{ s.attended_today ? '已打卡' : '打卡' }}</button>
 			</view>
 		</view>
-		<view v-else class="text-muted empty">暂无学生</view>
+		<view v-else-if="!loading" class="text-muted empty">暂无学生</view>
+		<view v-else class="loading-box">
+			<view class="loading-spin"></view>
+			<text class="loading-text">加载中...</text>
+		</view>
+
+		<!-- 加载更多：滚动到底部自动加载下一页 -->
+		<view v-if="pagedStudents.length && filtered.length > pagedStudents.length" class="load-more" @click="loadMore">
+			<text>已加载 {{ pagedStudents.length }} / {{ filtered.length }}，点击加载更多</text>
+		</view>
+		<view v-else-if="pagedStudents.length && filtered.length" class="load-more all-loaded">
+			<text>已全部加载（共 {{ filtered.length }} 人）</text>
+		</view>
 
 		<!-- 打卡弹窗 -->
 		<view class="mask" v-if="showAttend" @click="showAttend=false">
 			<view class="dialog" @click.stop>
-				<view class="dialog-title">考勤打卡</view>
+				<view class="dialog-title">{{ attendTitle }}</view>
 				<view class="field">
 					<text class="label">学生：{{ attendStudent && attendStudent.name }}</text>
 				</view>
@@ -119,10 +143,14 @@ export default {
 		return {
 			store: useUserStore(),
 			students: [],
-			filtered: [],
 			keyword: '',
+			// 前端分页：一次只渲染一页，滚动加载更多，避免学生多时整页 setData 卡顿
+			pageSize: 20,
+			visibleCount: 20,
+			loading: false,
 			showAttend: false,
 			attendStudent: null,
+			attendTitle: '考勤打卡',
 			attendSubjects: [],
 			attendSubjectId: null,
 			attendDate: ''
@@ -134,6 +162,18 @@ export default {
 		}
 	},
 	computed: {
+		/* 纯展示：按关键字过滤（仅在现有 students 数据上计算） */
+		filtered() {
+			const k = this.keyword.trim();
+			if (!k) return this.students;
+			return this.students.filter(s =>
+				(s.name && s.name.includes(k)) || (s.student_no && s.student_no.includes(k))
+			);
+		},
+		/* 纯展示：当前页要渲染的学生（切片，控制 DOM 数量） */
+		pagedStudents() {
+			return this.filtered.slice(0, this.visibleCount);
+		},
 		attendNames() {
 			return this.attendSubjects.map(s => this.attendLabel(s));
 		},
@@ -155,21 +195,34 @@ export default {
 			return { total, active, used, remain };
 		}
 	},
+	watch: {
+		// 搜索词变化时回到第一页，避免停留在深页看不到结果
+		keyword() {
+			this.visibleCount = this.pageSize;
+		}
+	},
 	onPullDownRefresh() {
-		this.loadStudents().then(() => uni.stopPullDownRefresh());
+		this.loadStudents(true).then(() => uni.stopPullDownRefresh());
+	},
+	onReachBottom() {
+		this.loadMore();
 	},
 	methods: {
-		async loadStudents() {
+		async loadStudents(refresh = false) {
+			// 下拉刷新时静默更新，不闪加载框；首次进入才显示 loading
+			if (!refresh) this.loading = true;
 			try {
 				this.students = await get('/students');
-				this.filterList();
-			} catch (e) {}
+				this.visibleCount = this.pageSize;
+			} catch (e) {
+			} finally {
+				this.loading = false;
+			}
 		},
-		filterList() {
-			const k = this.keyword.trim();
-			this.filtered = this.students.filter(s =>
-				!k || s.name.includes(k) || s.student_no.includes(k)
-			);
+		loadMore() {
+			if (this.visibleCount < this.filtered.length) {
+				this.visibleCount += this.pageSize;
+			}
 		},
 		goAdd() {
 			uni.navigateTo({ url: '/pages/student/add' });
@@ -187,7 +240,7 @@ export default {
 			const hasRemain = s.remaining !== null && s.remaining !== undefined;
 			return hasRemain ? `${s.name}（剩${s.remaining}次）` : s.name;
 		},
-		openAttend(s) {
+		openAttend(s, isMakeup = false) {
 			this.attendStudent = s;
 			// 打卡学科：优先用课时会话（subject_sessions：subject_id/subject_name/remaining），否则退回学科列表（subjects：id/name）
 			const sessions = (s.subject_sessions && s.subject_sessions.length) ? s.subject_sessions : (s.subjects || []);
@@ -198,6 +251,7 @@ export default {
 			}));
 			this.attendSubjectId = this.attendSubjects.length ? this.attendSubjects[0].id : null;
 			this.attendDate = this.todayStr();
+			this.attendTitle = isMakeup ? `补卡 - ${s.name}` : `考勤打卡 - ${s.name}`;
 			this.showAttend = true;
 		},
 		todayStr() {
@@ -285,6 +339,32 @@ export default {
 	margin-bottom: 6rpx;
 }
 .empty { text-align: center; padding: 80rpx 0; }
+.loading-box {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 80rpx 0;
+	gap: 16rpx;
+}
+.loading-spin {
+	width: 40rpx;
+	height: 40rpx;
+	border: 4rpx solid #e5e7eb;
+	border-top-color: #10b981;
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+	to { transform: rotate(360deg); }
+}
+.loading-text { font-size: 24rpx; color: #909399; }
+.load-more {
+	text-align: center;
+	padding: 24rpx 0 40rpx;
+	font-size: 24rpx;
+	color: #10b981;
+}
+.load-more.all-loaded { color: #c0c4cc; }
 .platform-tip { padding-top: 20rpx; }
 .tip-title { font-size: 32rpx; font-weight: 700; color: #303133; margin-bottom: 12rpx; }
 .tip-desc {
@@ -300,6 +380,27 @@ export default {
 	height: 60rpx;
 	line-height: 60rpx;
 	width: 100%;
+}
+.attend-btn.is-done {
+	background: #e5e7eb;
+	color: #9ca3af;
+	pointer-events: none;
+}
+.makeup-btn {
+	margin: 8rpx 0 0;
+	padding: 0 20rpx;
+	height: 48rpx;
+	line-height: 48rpx;
+	font-size: 22rpx;
+	background: #fff7e6;
+	color: #e6a23c;
+	border: 1rpx solid #f0c78a;
+	border-radius: 10rpx;
+}
+.ir-right {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
 }
 .mask {
 	position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.45); z-index: 99;

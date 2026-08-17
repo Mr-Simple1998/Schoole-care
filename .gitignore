@@ -23,3 +23,9 @@ dist-ssr/
 
 # 日志
 *.log
+
+# 微信开发者工具私人配置（本地设置，勿提交）
+project.private.config.json
+
+# SSH 密钥与本地凭据（绝不提交）
+.ssh/

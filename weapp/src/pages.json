@@ -6,11 +6,19 @@
 		},
 		{
 			"path": "pages/dashboard/dashboard",
-			"style": { "navigationBarTitleText": "工作台" }
+			"style": {
+				"navigationBarTitleText": "工作台",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
 		},
 		{
 			"path": "pages/student/list",
-			"style": { "navigationBarTitleText": "学生管理" }
+			"style": {
+				"navigationBarTitleText": "学生管理",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
 		},
 		{
 			"path": "pages/student/add",
@@ -38,7 +46,11 @@
 		},
 		{
 			"path": "pages/campus/transactions",
-			"style": { "navigationBarTitleText": "收支明细" }
+			"style": {
+				"navigationBarTitleText": "收支明细",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
 		},
 		{
 			"path": "pages/teachers/teachers",
@@ -50,7 +62,11 @@
 		},
 		{
 			"path": "pages/platform/platform",
-			"style": { "navigationBarTitleText": "机构开户管理" }
+			"style": {
+				"navigationBarTitleText": "机构开户管理",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
 		},
 		{
 			"path": "pages/mine/mine",
@@ -72,6 +88,7 @@
 		"navigationBarTextStyle": "white",
 		"navigationBarTitleText": "机构管理",
 		"navigationBarBackgroundColor": "#10b981",
-		"backgroundColor": "#f5f7fa"
+		"backgroundColor": "#f5f7fa",
+		"onReachBottomDistance": 80
 	}
 }

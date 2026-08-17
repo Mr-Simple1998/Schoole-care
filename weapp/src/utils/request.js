@@ -1,5 +1,12 @@
 // 请求封装：统一 baseUrl、token 注入、错误处理
-const BASE_URL = 'http://127.0.0.1:8000/api';
+// 本地联调默认 127.0.0.1；部署时把这里改成云托管域名，
+// 或运行时调用 setApiBase(url) 覆盖（便于多环境切换测试）
+// 注意：不要在此文件使用 import.meta（mp-weixin 构建会转译出 require("url") 导致小程序启动崩溃）
+let BASE_URL = 'http://127.0.0.1:8000/api';
+
+export function setApiBase(url) {
+	if (url) BASE_URL = url;
+}
 
 export function getToken() {
 	return uni.getStorageSync('token') || '';
@@ -20,19 +27,33 @@ function toLogin() {
 	uni.reLaunch({ url: '/pages/login/login' });
 }
 
+// 错误 toast 去重：并发请求失败时只提示一次，避免连续弹窗刷屏
+let lastToast = { title: '', time: 0 };
+function showErrToast(title) {
+	const now = Date.now();
+	if (lastToast.title === title && now - lastToast.time < 2000) return;
+	lastToast = { title, time: now };
+	uni.showToast({ title, icon: 'none', duration: 2500 });
+}
+
 export function request(options) {
 	return new Promise((resolve, reject) => {
 		const header = Object.assign({}, options.header || {});
 		const token = getToken();
 		if (token) header['Authorization'] = 'Bearer ' + token;
+		// 需要操作型请求可带 loading：true，自动弹加载框并避免重复点击
+		if (options.loading) {
+			uni.showLoading({ title: options.loadingText || '处理中...', mask: true });
+		}
 
 		uni.request({
 			url: BASE_URL + options.url,
 			method: options.method || 'GET',
 			data: options.data || {},
 			header,
-			timeout: 15000,
+			timeout: options.timeout || 15000,
 			success(res) {
+				if (options.loading) uni.hideLoading();
 				if (res.statusCode >= 200 && res.statusCode < 300) {
 					resolve(res.data);
 				} else if (res.statusCode === 401) {
@@ -40,12 +61,13 @@ export function request(options) {
 					reject(res.data || { detail: '未授权' });
 				} else {
 					const msg = (res.data && (res.data.detail || res.data.message)) || '请求失败';
-					uni.showToast({ title: String(msg), icon: 'none', duration: 2500 });
+					if (!options.silent) showErrToast(String(msg));
 					reject(res.data || {});
 				}
 			},
 			fail(err) {
-				uni.showToast({ title: '网络异常，请检查后端是否启动', icon: 'none', duration: 2500 });
+				if (options.loading) uni.hideLoading();
+				if (!options.silent) showErrToast('网络异常，请检查后端是否启动');
 				reject(err);
 			}
 		});

@@ -12,7 +12,7 @@
 		</view>
 
 		<!-- 列表 -->
-		<view v-for="t in txns" :key="t.id" class="card txn-row">
+		<view v-for="t in pagedTxns" :key="t.id" class="card txn-row">
 			<view class="txn-head">
 				<view class="txn-left">
 					<text class="tag" :class="t.kind === 'income' ? 'tag-success' : 'tag-danger'">
@@ -36,7 +36,15 @@
 			</view>
 		</view>
 
-		<view v-if="!txns.length" class="empty">暂无收支记录</view>
+		<view v-if="!txns.length && !loading" class="empty">暂无收支记录</view>
+
+		<!-- 加载更多 -->
+		<view v-if="pagedTxns.length && txns.length > pagedTxns.length" class="load-more" @click="loadMore">
+			<text>已加载 {{ pagedTxns.length }} / {{ txns.length }} 条，点击加载更多</text>
+		</view>
+		<view v-else-if="pagedTxns.length" class="load-more all-loaded">
+			<text>已全部加载（共 {{ txns.length }} 条）</text>
+		</view>
 	</view>
 </template>
 
@@ -50,6 +58,10 @@ export default {
 			campuses: [],
 			campusId: null,
 			kind: null,
+			loading: false,
+			// 前端分页：一次只渲染 20 条，滚动到底加载更多
+			pageSize: 20,
+			visibleCount: 20,
 			kindLabels: ['全部类型', '收入', '支出'],
 			kindValues: [null, 'income', 'expense']
 		};
@@ -68,6 +80,9 @@ export default {
 		kindName() {
 			const idx = this.kindValues.indexOf(this.kind);
 			return this.kindLabels[idx] || '全部类型';
+		},
+		pagedTxns() {
+			return this.txns.slice(0, this.visibleCount);
 		}
 	},
 	onLoad(options) {
@@ -76,22 +91,38 @@ export default {
 		}
 		this.load();
 	},
+	onPullDownRefresh() {
+		this.load(true).then(() => uni.stopPullDownRefresh());
+	},
+	onReachBottom() {
+		this.loadMore();
+	},
 	methods: {
 		fmt(n) {
 			return Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
 		},
-		async load() {
+		async load(refresh = false) {
+			if (!refresh) this.loading = true;
 			try {
 				const params = {};
 				if (this.campusId) params.campus_id = this.campusId;
 				if (this.kind) params.kind = this.kind;
 				this.txns = await get('/campuses/transactions', params);
-			} catch (e) {}
+				this.visibleCount = this.pageSize;
+			} catch (e) {
+			} finally {
+				this.loading = false;
+			}
 			try {
 				// 用概况接口取校区下拉：负责人只见自己校区
 				const ov = await get('/campuses');
 				this.campuses = (ov.items || []).map(c => ({ id: c.id, name: c.name }));
 			} catch (e) {}
+		},
+		loadMore() {
+			if (this.visibleCount < this.txns.length) {
+				this.visibleCount += this.pageSize;
+			}
 		},
 		onCampusChange(idx) {
 			this.campusId = this.campusValues[idx];
@@ -167,4 +198,11 @@ export default {
 .link { font-size: 26rpx; }
 .link.danger { color: #ef4444; }
 .empty { text-align: center; color: #c0c4cc; padding: 60rpx 0; font-size: 26rpx; }
+.load-more {
+	text-align: center;
+	padding: 24rpx 0;
+	font-size: 24rpx;
+	color: #10b981;
+}
+.load-more.all-loaded { color: #c0c4cc; }
 </style>

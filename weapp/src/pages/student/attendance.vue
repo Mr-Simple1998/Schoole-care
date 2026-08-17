@@ -29,15 +29,22 @@
 						<view class="cal-name">学生</view>
 						<view v-for="d in monthDays" :key="d.dayStr" class="cal-day" :class="{ 'is-today': d.isToday }">{{ d.day }}</view>
 					</view>
-					<view v-for="s in students" :key="s.student_id" class="cal-row">
+					<view v-for="s in pageStudents" :key="s.student_id" class="cal-row">
 						<view class="cal-name">{{ s.student_name }}</view>
 						<view v-for="d in monthDays" :key="d.dayStr" class="cal-cell">
-							<view class="dot" :class="'is-' + statusClass(cellStatus(s, d.dayStr))"></view>
+							<view class="dot" :class="'is-' + statusClass(s.statusMap && s.statusMap[d.dayStr])"></view>
 						</view>
 					</view>
 				</view>
 			</scroll-view>
+			<!-- 学生分页：网格行很多，分页只渲染当前页，避免整月表格卡顿 -->
+			<view v-if="totalPages > 1" class="cal-pager">
+				<text class="page-btn" :class="{ disabled: attPage <= 1 }" @click="attPrev">‹ 上一页</text>
+				<text class="page-info">{{ attPage }} / {{ totalPages }}（共 {{ students.length }} 人）</text>
+				<text class="page-btn" :class="{ disabled: attPage >= totalPages }" @click="attNext">下一页 ›</text>
+			</view>
 		</view>
+		<view v-else-if="loading" class="card empty">加载中...</view>
 		<view v-else class="card empty">该月暂无学生考勤数据</view>
 	</view>
 </template>
@@ -52,7 +59,11 @@ export default {
 		return {
 			store: useUserStore(),
 			month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-			students: []
+			students: [],
+			loading: false,
+			// 学生分页：一次只渲染一页行（每页 20 人），大幅减少 DOM 节点
+			attPage: 1,
+			attPageSize: 20
 		};
 	},
 	computed: {
@@ -67,6 +78,14 @@ export default {
 				const dayStr = `${this.month}-${String(day).padStart(2, '0')}`;
 				return { day, dayStr, isToday: dayStr === today };
 			});
+		},
+		// 当前页学生（切片）
+		pageStudents() {
+			const start = (this.attPage - 1) * this.attPageSize;
+			return this.students.slice(start, start + this.attPageSize);
+		},
+		totalPages() {
+			return Math.max(1, Math.ceil(this.students.length / this.attPageSize));
 		}
 	},
 	onLoad() {
@@ -77,9 +96,11 @@ export default {
 			this.month = e.detail.value;
 			this.load();
 		},
-		cellStatus(s, dayStr) {
-			const rec = (s.records || []).find(r => r.date === dayStr);
-			return rec ? rec.status : '';
+		attPrev() {
+			if (this.attPage > 1) this.attPage--;
+		},
+		attNext() {
+			if (this.attPage < this.totalPages) this.attPage++;
 		},
 		// 考勤状态 → 图标 class
 		statusClass(status) {
@@ -87,10 +108,22 @@ export default {
 			return map[status] || 'empty';
 		},
 		async load() {
+			this.loading = true;
 			try {
 				const data = await get('/dashboard/attendance-summary', { month: this.month });
-				this.students = data.students || [];
-			} catch (e) {}
+				// 预建「日期 → 状态」索引：一次遍历，之后渲染每格都是 O(1) 查找，
+				// 避免原来每格 records.find() 线性扫描造成的大列表卡顿
+				this.students = (data.students || []).map(s => {
+					const map = {};
+					(s.records || []).forEach(r => { if (r.date) map[r.date] = r.status; });
+					return { student_id: s.student_id, student_name: s.student_name, statusMap: map };
+				});
+				this.attPage = 1;
+			} catch (e) {
+				this.students = [];
+			} finally {
+				this.loading = false;
+			}
 		}
 	}
 };
@@ -159,4 +192,20 @@ export default {
 .dot.is-early { background: #8b5cf6; }
 .dot.is-empty { background: #e5e7eb; }
 .empty { text-align: center; color: #c0c4cc; font-size: 26rpx; padding: 60rpx 0; }
+.cal-pager {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 20rpx;
+	padding: 16rpx 0 8rpx;
+}
+.cal-pager .page-btn {
+	font-size: 24rpx;
+	color: #10b981;
+	padding: 8rpx 22rpx;
+	background: #f0fdf4;
+	border-radius: 10rpx;
+}
+.cal-pager .page-btn.disabled { color: #c0c4cc; background: #f5f7fa; }
+.cal-pager .page-info { font-size: 24rpx; color: #6b7280; }
 </style>

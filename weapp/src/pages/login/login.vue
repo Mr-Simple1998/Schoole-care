@@ -38,15 +38,23 @@ export default {
 		return {
 			username: '',
 			password: '',
-			loading: false
+			loading: false,
+			silentDone: false
 		};
 	},
-	onLoad() {
-		// 尝试静默登录（本地 openid 已绑定时直接进入）
+	onShow() {
+		// 每次回到登录页都尝试：已有 token 直接进入；否则静默登录（本地 openid 已绑定时自动进入）
 		const store = useUserStore();
+		store.init();
 		if (store.token) {
 			this.afterLogin(store);
+			return;
 		}
+		if (this.silentDone) return; // 本次会话已尝试过静默登录，避免重复请求
+		this.silentDone = true;
+		store.silentLogin().then((ok) => {
+			if (ok && store.token) this.afterLogin(store);
+		});
 	},
 	methods: {
 		// 平台超级管理员直接进入机构开户管理（与 PC 端一致）；其他角色进入工作台

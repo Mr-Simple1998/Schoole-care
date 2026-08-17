@@ -93,7 +93,10 @@
 			<view class="card-title"><text class="bar"></text>功能</view>
 			<view class="quick-grid">
 				<!-- 学生分开管理：各角色只能给自己负责的学生打卡 -->
-				<view class="quick-item" v-if="student.teacher_id === store.user.id" @click="openAttend"><text>考勤打卡</text></view>
+				<template v-if="student.teacher_id === store.user.id">
+					<view class="quick-item" :class="{ 'is-done': student.attended_today }" @click="openAttend(false)"><text>{{ student.attended_today ? '已打卡' : '考勤打卡' }}</text></view>
+					<view class="quick-item is-makeup" @click="openAttend(true)"><text>补卡</text></view>
+				</template>
 				<view class="quick-item" @click="openScore"><text>成绩</text></view>
 				<view class="quick-item" @click="openHomework"><text>作业</text></view>
 				<view class="quick-item" @click="togglePerf"><text>课堂表现</text></view>
@@ -103,7 +106,7 @@
 		<!-- 打卡弹窗 -->
 		<view class="mask" v-if="showAttend" @click="showAttend=false">
 			<view class="dialog" @click.stop>
-				<view class="dialog-title">考勤打卡</view>
+				<view class="dialog-title">{{ attendTitle }}</view>
 				<view class="field">
 					<text class="label">选择学科</text>
 					<picker :range="subjectNames" @change="e => attendSubjectId = attendSubjects[e.detail.value].id">
@@ -214,6 +217,12 @@
 			</view>
 		</view>
 	</view>
+	<view v-else class="page loading-page">
+		<view class="loading-box">
+			<view class="loading-spin"></view>
+			<text class="loading-text">加载中...</text>
+		</view>
+	</view>
 </template>
 
 <script>
@@ -231,9 +240,10 @@ export default {
 			scores: [],
 			hwList: [],
 			teachers: [],
+			loading: false,
 			showTeacherPick: false,
 			selectedTeacherId: null,
-			showAttend: false, attendSubjects: [], attendSubjectId: null, attendDate: '',
+			showAttend: false, attendTitle: '考勤打卡', attendSubjects: [], attendSubjectId: null, attendDate: '',
 			showScore: false, scoreForm: { subject: '', score: '', exam_type: '平时考' },
 			showHw: false, hwForm: { subject: '', content: '' },
 			showPerf: false, perfTypes: PERF_TYPES, perfForm: { performance_type: '纪律', rating: 3, comment: '' }
@@ -298,8 +308,15 @@ export default {
 	},
 	methods: {
 		async loadAll() {
+			this.loading = true;
 			try {
-				this.student = await get('/students/' + this.id);
+				// 并行拉取：学生档案 / 成绩 / 作业 同时请求，缩短首屏等待
+				const [student, scores, hw] = await Promise.all([
+					get('/students/' + this.id),
+					get('/learning/scores', { student_id: this.id }),
+					get('/learning/homework', { student_id: this.id })
+				]);
+				this.student = student;
 				// 打卡学科：优先用课时会话（subject_sessions：subject_id/subject_name/remaining），否则退回学科列表（subjects：id/name）
 				const sessions = (this.student.subject_sessions && this.student.subject_sessions.length)
 					? this.student.subject_sessions
@@ -310,8 +327,8 @@ export default {
 					remaining: x.remaining
 				}));
 				if (this.attendSubjects.length) this.attendSubjectId = this.attendSubjects[0].id;
-				this.scores = await get('/learning/scores', { student_id: this.id });
-				this.hwList = await get('/learning/homework', { student_id: this.id });
+				this.scores = scores || [];
+				this.hwList = hw || [];
 				if (this.canAssign) {
 					try {
 						this.teachers = await get('/auth/teachers');
@@ -319,7 +336,11 @@ export default {
 						this.teachers = [];
 					}
 				}
-			} catch (e) {}
+			} catch (e) {
+				this.student = null;
+			} finally {
+				this.loading = false;
+			}
 		},
 		openTeacherPick() {
 			this.selectedTeacherId = (this.student && this.student.teacher_id) || null;
@@ -388,7 +409,11 @@ export default {
 			if (st === '未完成') return 'tag-warn';
 			return 'tag-grey';
 		},
-		openAttend() { this.showAttend = true; },
+		openAttend(isMakeup = false) {
+			this.attendDate = new Date().toISOString().slice(0, 10);
+			this.attendTitle = isMakeup ? '补卡' : '考勤打卡';
+			this.showAttend = true;
+		},
 		async doAttend() {
 			try {
 				const res = await post('/learning/attendance', {
@@ -431,6 +456,25 @@ export default {
 
 <style scoped>
 .page { padding-bottom: 40rpx; }
+.loading-page { padding-top: 120rpx; }
+.loading-box {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 16rpx;
+}
+.loading-spin {
+	width: 40rpx;
+	height: 40rpx;
+	border: 4rpx solid #e5e7eb;
+	border-top-color: #10b981;
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+	to { transform: rotate(360deg); }
+}
+.loading-text { font-size: 24rpx; color: #909399; }
 .avatar {
 	width: 90rpx; height: 90rpx; border-radius: 50%;
 	background: #10b981; color: #fff; text-align: center; line-height: 90rpx; font-size: 40rpx; margin-right: 20rpx;
@@ -457,6 +501,8 @@ export default {
 	padding: 26rpx 0; border-radius: 12rpx; margin-right: 12rpx; margin-bottom: 12rpx; font-size: 26rpx;
 }
 .quick-item:nth-child(2n) { margin-right: 0; }
+.quick-item.is-done { background: #f3f4f6; color: #9ca3af; }
+.quick-item.is-makeup { background: #fff7e6; color: #e6a23c; }
 .record-item {
 	display: flex; align-items: center; padding: 16rpx 0; border-bottom: 1rpx solid #f5f5f5; font-size: 26rpx;
 }

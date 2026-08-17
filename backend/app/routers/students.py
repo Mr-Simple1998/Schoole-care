@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Student, User, UserRole
+from ..models_learning import Attendance
 from ..models_points import PointRecord
 from ..models_subject import Subject, StudentSubject
 from ..security import get_current_user, is_head_role, managed_campus_ids
@@ -148,13 +149,15 @@ class StudentOut(BaseModel):
     notes: str | None
     subjects: list[SubjectOut] = []
     subject_sessions: list[SubjectSessionOut] = []
+    attended_today: bool = False   # 今天是否已打卡（考勤按钮/状态展示用）
 
     class Config:
         from_attributes = True
 
 
-def _student_out(student) -> StudentOut:
+def _student_out(student, attended_today: bool = False) -> StudentOut:
     out = StudentOut.model_validate(student)
+    out.attended_today = attended_today
     out.teacher_name = student.teacher.name if student.teacher else None
     out.campus_name = student.campus.name if student.campus else None
     # 学科课时信息
@@ -251,7 +254,26 @@ def list_students(
         q = q.join(StudentSubject, StudentSubject.student_id == Student.id).filter(
             StudentSubject.subject_id == subject_id
         )
-    return [_student_out(s) for s in q.all()]
+    students = q.all()
+    # 批量查询今天已打卡的学生（同一学生当天有任意一条考勤记录即视为已打卡）
+    attended_ids = set()
+    if students:
+        today = date.today()
+        rows = (
+            db.query(Attendance.student_id)
+            .filter(
+                Attendance.org_id == current_user.org_id,
+                Attendance.date == today,
+                Attendance.student_id.in_([s.id for s in students]),
+            )
+            .distinct()
+            .all()
+        )
+        attended_ids = {r[0] for r in rows}
+    return [
+        _student_out(s, attended_today=(s.id in attended_ids))
+        for s in students
+    ]
 
 
 @router.get("/deleted")
@@ -274,7 +296,17 @@ def get_student(student_id: int, current_user: User = Depends(get_current_user),
     if not student:
         raise HTTPException(status_code=404, detail="学生不存在")
     _check_student_scope(db, current_user, student)
-    return _student_out(student)
+    attended_today = (
+        db.query(Attendance.id)
+        .filter(
+            Attendance.org_id == current_user.org_id,
+            Attendance.student_id == student.id,
+            Attendance.date == date.today(),
+        )
+        .first()
+        is not None
+    )
+    return _student_out(student, attended_today=attended_today)
 
 
 @router.post("", response_model=StudentOut)

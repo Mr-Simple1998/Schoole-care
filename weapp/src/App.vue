@@ -1,7 +1,17 @@
 <script>
+import { useUserStore } from './stores/user';
+
 export default {
 	onLaunch: function () {
-		console.log('小程序启动');
+		// 恢复本地登录态；无 token 时尝试静默登录（已绑定微信的账号自动进入）
+		const store = useUserStore();
+		store.init();
+		if (store.token) {
+			// 后台刷新一次用户信息（角色/校区可能已变化）
+			store.fetchMe().catch(() => {});
+		} else {
+			store.silentLogin();
+		}
 	},
 	onShow: function () { },
 	onHide: function () { },
