@@ -191,7 +191,10 @@ async function handlePurge(row) {
     ElMessage.success(res.detail || '已彻底删除')
     loadList()
   } catch (e) {
-    ElMessage.error(e?.response?.data?.detail || '删除失败')
+    const status = e?.response?.status
+    const detail = e?.response?.data?.detail
+    ElMessage.error(status ? `删除失败（HTTP ${status}）：${detail || e?.message || '未知错误'}` : `删除失败：${e?.message || '无法连接后端，请确认后端已启动'}`)
+    console.error('[彻底删除]', e)
   }
 }
 
@@ -213,7 +216,10 @@ async function handlePurgeAll() {
     list.value = [] // 立即清空显示，不再展示任何已删除学生
     loadList() // 双保险：重新拉取确认后端已清空
   } catch (e) {
-    ElMessage.error(e?.response?.data?.detail || '清空失败')
+    const status = e?.response?.status
+    const detail = e?.response?.data?.detail
+    ElMessage.error(status ? `清空失败（HTTP ${status}）：${detail || e?.message || '未知错误'}` : `清空失败：${e?.message || '无法连接后端，请确认后端已启动'}`)
+    console.error('[清空全部]', e)
   }
 }
 
