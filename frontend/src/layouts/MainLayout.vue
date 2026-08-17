@@ -30,10 +30,6 @@
             <el-icon><User /></el-icon>
             <span>学生管理</span>
           </el-menu-item>
-          <el-menu-item v-if="userStore.isPrincipal" index="/deleted-students">
-            <el-icon><Delete /></el-icon>
-            <span>已删除学生</span>
-          </el-menu-item>
           <el-menu-item v-if="userStore.isPrincipal || userStore.isSubPrincipal" index="/income">
             <el-icon><Money /></el-icon>
             <span>收费管理</span>

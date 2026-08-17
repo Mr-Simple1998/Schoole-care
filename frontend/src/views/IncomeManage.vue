@@ -32,7 +32,6 @@
                 <el-radio-group v-model="studentFilter" size="small">
                   <el-radio-button value="all">全部</el-radio-button>
                   <el-radio-button value="active">在读</el-radio-button>
-                  <el-radio-button value="deleted">已删除学生</el-radio-button>
                 </el-radio-group>
                 <el-button type="primary" size="small" :icon="Plus" @click="openFeeDialog">记一笔收费</el-button>
               </div>

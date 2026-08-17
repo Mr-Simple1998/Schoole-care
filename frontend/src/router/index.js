@@ -14,8 +14,6 @@ const routes = [
       { path: 'dashboard', name: 'dashboard', component: () => import('@/views/Dashboard.vue'), meta: { title: '工作台' } },
       // 学生管理
       { path: 'students', name: 'students', component: () => import('@/views/StudentList.vue'), meta: { title: '学生管理' } },
-      // 已删除学生（校长）
-      { path: 'deleted-students', name: 'deleted-students', component: () => import('@/views/DeletedStudents.vue'), meta: { title: '已删除学生', roles: ['principal'] } },
       // 收费管理（校长 + 校区负责人，数据范围自动限定）
       { path: 'income', name: 'income', component: () => import('@/views/IncomeManage.vue'), meta: { title: '收费管理', roles: ['principal', 'sub_principal', 'campus_head'] } },
       // 教师账号管理（校长 + 校区负责人）
