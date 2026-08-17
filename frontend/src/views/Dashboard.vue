@@ -92,6 +92,9 @@
         <div class="att-head">
           <div class="card-title">本月学生考勤（日历）</div>
           <div class="att-actions">
+            <!-- 今日打卡进度：全部学生打卡完成后显示「今日全部已打卡」 -->
+            <el-tag v-if="todayAttProgress.complete" type="success" effect="dark" size="small">今日全部已打卡 ✓</el-tag>
+            <el-tag v-else-if="todayAttProgress.total" type="info" effect="plain" size="small">今日已打卡 {{ todayAttProgress.done }}/{{ todayAttProgress.total }}</el-tag>
             <el-button size="small" type="primary" @click="openDashboardAttendance">给学生打卡</el-button>
             <el-button size="small" type="primary" plain @click="$router.push('/student-attendance')">进入日历</el-button>
           </div>
@@ -212,7 +215,13 @@
       <el-form label-width="80px">
         <el-form-item label="学生">
           <el-select v-model="attStudentId" placeholder="选择学生" filterable style="width:100%" @change="onAttStudentChange">
-            <el-option v-for="s in myStudents" :key="s.id" :label="s.name" :value="s.id" />
+            <!-- 已打卡的学生在选项中标记，便于一眼看出哪些还没打卡 -->
+            <el-option
+              v-for="s in myStudents"
+              :key="s.id"
+              :label="s.attended_today ? s.name + '（已打卡）' : s.name"
+              :value="s.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="学科">
@@ -226,7 +235,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="日期">
-          <el-date-picker v-model="attForm.date" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+          <el-date-picker v-model="attForm.date" type="date" value-format="YYYY-MM-DD" placeholder="打卡日期（可补卡）" style="width:100%" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="attForm.status" style="width:100%">
@@ -415,6 +424,22 @@ function cellStatus(student, dayStr) {
   const rec = (student.records || []).find((r) => r.date === dayStr)
   return rec ? rec.status : ''
 }
+
+// 今天是否已打卡（优先看当月记录，跨月时回退到 /students 的 attended_today）
+function checkedInToday(s) {
+  if (cellStatus(s, todayStr())) return true
+  const full = myStudents.value.find((x) => x.id === s.student_id)
+  return full ? !!full.attended_today : false
+}
+
+// 今日打卡进度：全部学生打卡完成后 complete=true（显示「今日全部已打卡」）
+const todayAttProgress = computed(() => {
+  const list = attendanceSummary.value.students || []
+  const total = list.length
+  if (!total) return { total: 0, done: 0, complete: false }
+  const done = list.filter((s) => checkedInToday(s)).length
+  return { total, done, complete: done >= total }
+})
 
 // 考勤状态 → 图标 class（正常/迟到/缺勤/请假/早退/未记录）
 const STATUS_CLASS = { 正常: 'normal', 迟到: 'late', 缺勤: 'absent', 请假: 'leave', 早退: 'early' }

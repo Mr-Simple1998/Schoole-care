@@ -34,6 +34,10 @@
 					<view class="mi-left"><text class="mi-emoji">🏫</text><text>校区管理</text></view>
 					<text class="arrow">›</text>
 				</view>
+				<view class="menu-item" @click="goDeleted" v-if="store.isPrincipal">
+					<view class="mi-left"><text class="mi-emoji">🗑️</text><text>已删除学生</text></view>
+					<text class="arrow">›</text>
+				</view>
 				<view class="menu-item" @click="goPoints">
 					<view class="mi-left"><text class="mi-emoji">🏆</text><text>积分管理</text></view>
 					<text class="arrow">›</text>
@@ -76,6 +80,7 @@ export default {
 		goSubjects() { uni.navigateTo({ url: '/pages/subjects/subjects' }); },
 		goPoints() { uni.navigateTo({ url: '/pages/points/points' }); },
 		goCampus() { uni.navigateTo({ url: '/pages/campus/campus' }); },
+		goDeleted() { uni.navigateTo({ url: '/pages/student/deleted' }); },
 		goPlatform() { uni.navigateTo({ url: '/pages/platform/platform' }); },
 		doLogout() {
 			uni.showModal({

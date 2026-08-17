@@ -111,11 +111,16 @@
             <span v-else class="empty-inline">0</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="$router.push(`/student/${row.id}`)">学习档案</el-button>
             <!-- 学生分开管理：各角色只能给自己负责的学生打卡（校长/校区负责人/教师均可拥有自己的学生） -->
-            <el-button v-if="row.teacher_id === userStore.user?.id" size="small" type="success" link @click="openAttendance(row)">打卡</el-button>
+            <template v-if="row.teacher_id === userStore.user?.id">
+              <!-- 已打卡：今天打过卡后显示“已打卡”，不再重复打卡；需要补历史日期用“补卡” -->
+              <el-tag v-if="row.attended_today" size="small" type="success" effect="plain" class="att-done-tag">已打卡</el-tag>
+              <el-button v-else size="small" type="success" link @click="openAttendance(row, false)">打卡</el-button>
+              <el-button size="small" type="warning" link class="att-makeup-btn" @click="openAttendance(row, true)">补卡</el-button>
+            </template>
             <el-button size="small" link @click="openDialog(row)">编辑</el-button>
             <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
           </template>
@@ -258,8 +263,8 @@
       </template>
     </el-dialog>
 
-    <!-- 打卡对话框 -->
-    <el-dialog v-model="attVisible" title="考勤打卡" width="480px">
+    <!-- 打卡/补卡对话框（共用；补卡可补打过去任意日期） -->
+    <el-dialog v-model="attVisible" :title="attTitle" width="480px">
       <el-form :model="attForm" label-width="80px">
         <el-form-item label="学生">
           <span style="font-weight:600">{{ attStudent?.name }}</span>
@@ -321,6 +326,7 @@ const formRef = ref()
 const attVisible = ref(false)
 const attSaving = ref(false)
 const attStudent = ref(null)
+const attTitle = ref('考勤打卡')
 const attForm = reactive({ subject_id: null, date: todayStr(), status: '正常', remark: '' })
 
 // 校长/校区负责人可分配负责教师
@@ -568,12 +574,23 @@ function todayStr() {
   return `${d.getFullYear()}-${m}-${dd}`
 }
 
-function openAttendance(row) {
+// 补卡默认日期：昨天（漏打卡最常用场景）
+function yesterdayStr() {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${dd}`
+}
+
+// isMakeup=true 时走补卡：标题改为「补卡」，日期默认昨天，也可在弹窗里改任意历史日期
+function openAttendance(row, isMakeup = false) {
   attStudent.value = row
   attForm.subject_id = null
-  attForm.date = todayStr()
+  attForm.date = isMakeup ? yesterdayStr() : todayStr()
   attForm.status = '正常'
   attForm.remark = ''
+  attTitle.value = isMakeup ? `补卡 - ${row.name}` : '考勤打卡'
   attVisible.value = true
 }
 
@@ -737,5 +754,12 @@ onMounted(() => {
   color: var(--warning);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+.att-done-tag {
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.att-makeup-btn {
+  margin-left: 2px;
 }
 </style>

@@ -6,7 +6,7 @@
         <span class="banner-emoji">🗑️</span>
         <div>
           <div class="banner-title">已删除学生档案</div>
-          <div class="banner-desc">以下学生已移出在读名单，档案将保留用于收费记录与历史核对，仅校长可见。</div>
+          <div class="banner-desc">以下学生已移出在读名单，档案保留用于收费记录与历史核对，仅校长可见；可「彻底删除」抹除该生全部数据（含收费/考勤/成绩/积分等），不可恢复。</div>
         </div>
       </div>
 
@@ -43,7 +43,10 @@
             共 <b>{{ filteredList.length }}</b> 条记录<template v-if="isSearching">（已删除总数 {{ totalDeleted }}）</template>
           </span>
         </div>
-        <el-button :icon="Refresh" @click="loadList">刷新</el-button>
+        <div class="toolbar-right">
+          <el-button v-if="totalDeleted > 0" type="danger" plain :icon="Delete" @click="handlePurgeAll">清空全部</el-button>
+          <el-button :icon="Refresh" @click="loadList">刷新</el-button>
+        </div>
       </div>
 
       <el-table :data="filteredList" stripe>
@@ -114,6 +117,12 @@
             <span v-else class="empty-inline">—</span>
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="110" fixed="right">
+          <template #default="{ row }">
+            <!-- 彻底删除：抹除该生全部数据（收费/考勤/成绩/积分等），不可恢复 -->
+            <el-button size="small" type="danger" link @click="handlePurge(row)">彻底删除</el-button>
+          </template>
+        </el-table-column>
         <template #empty>
           <el-empty :description="isSearching ? '未找到匹配的已删除学生' : '暂无已删除学生记录'" :image-size="90">
             <p v-if="!isSearching" class="empty-hint">学生被删除后会自动归档于此，用于历史查询与收费记录核对</p>
@@ -126,8 +135,8 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Refresh, Delete } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 const list = ref([])
@@ -166,6 +175,48 @@ async function loadList() {
   }
 }
 
+// 彻底删除单名已删除学生（不可恢复：档案 + 收费/考勤/成绩/作业/课时/积分等全部数据）
+async function handlePurge(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确定彻底删除学生「${row.name}」吗？该操作将永久删除其全部数据（收费记录、考勤、成绩、作业、积分等），无法恢复！`,
+      '彻底删除确认',
+      { type: 'warning', confirmButtonText: '彻底删除', confirmButtonClass: 'el-button--danger' }
+    )
+  } catch {
+    return // 用户取消
+  }
+  try {
+    const res = await request.delete(`/students/deleted/${row.id}`)
+    ElMessage.success(res.detail || '已彻底删除')
+    loadList()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '删除失败')
+  }
+}
+
+// 一键清空全部已删除学生（不可恢复）
+async function handlePurgeAll() {
+  if (!list.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `确定清空全部 ${list.value.length} 名已删除学生吗？该操作将永久删除其全部数据（收费记录、考勤、成绩、作业、积分等），无法恢复！`,
+      '清空确认',
+      { type: 'warning', confirmButtonText: '全部清空', confirmButtonClass: 'el-button--danger' }
+    )
+  } catch {
+    return // 用户取消
+  }
+  try {
+    const res = await request.delete('/students/deleted')
+    ElMessage.success(res.detail || '已清空')
+    list.value = [] // 立即清空显示，不再展示任何已删除学生
+    loadList() // 双保险：重新拉取确认后端已清空
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '清空失败')
+  }
+}
+
 function handleSearch() {}
 
 onMounted(loadList)
@@ -177,10 +228,16 @@ onMounted(loadList)
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  gap: 12px;
 }
 .toolbar-left {
   display: flex;
   gap: 12px;
+}
+.toolbar-right {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 /* ===== 数据直观化（仅展示层） ===== */

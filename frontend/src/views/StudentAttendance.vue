@@ -6,6 +6,9 @@
           <div class="att-title">
             <span>全体学生考勤日历</span>
             <el-date-picker v-model="month" type="month" value-format="YYYY-MM" placeholder="选择月份" style="width: 140px" @change="loadSummary" />
+            <!-- 今日打卡进度：全部学生打卡完成后显示「今日全部已打卡」 -->
+            <el-tag v-if="todayAttProgress.complete" type="success" effect="dark" size="small">今日全部已打卡 ✓</el-tag>
+            <el-tag v-else-if="todayAttProgress.total" type="info" effect="plain" size="small">今日已打卡 {{ todayAttProgress.done }}/{{ todayAttProgress.total }}</el-tag>
           </div>
           <div class="cal-legend">
             <span class="leg"><i class="cal-dot is-normal"></i>正常</span>
@@ -30,11 +33,21 @@
           <tbody>
             <tr v-for="s in calendarStudents" :key="s.student_id">
               <td class="cal-name">{{ s.student_name }}</td>
-              <td v-for="d in monthDays" :key="d.dayStr" class="cal-cell" :title="s.student_name + ' ' + d.dayStr + ' ' + (cellStatus(s, d.dayStr) || '未记录')">
+              <td
+                v-for="d in monthDays"
+                :key="d.dayStr"
+                class="cal-cell"
+                :class="{ 'is-makeup-target': isMakeupTarget(s, d), 'is-today': d.isToday }"
+                :title="cellTitle(s, d)"
+                @click="onCellClick(s, d)"
+              >
                 <i class="cal-dot" :class="'is-' + statusClass(cellStatus(s, d.dayStr))"></i>
               </td>
               <td class="cal-act">
-                <el-button size="small" link type="primary" @click="openAttendance(s)">打卡</el-button>
+                <!-- 已打卡：今天已记录则显示“已打卡”，不再重复打卡；漏打历史日期用“补卡” -->
+                <el-tag v-if="checkedInToday(s)" size="small" type="success" effect="plain">已打卡</el-tag>
+                <el-button v-else size="small" link type="primary" @click="openAttendance(s, false)">打卡</el-button>
+                <el-button size="small" link type="warning" class="cal-makeup-btn" @click="openAttendance(s, true)">补卡</el-button>
               </td>
             </tr>
           </tbody>
@@ -43,8 +56,8 @@
       <el-empty v-else description="该月暂无学生考勤数据" :image-size="80" />
     </el-card>
 
-    <!-- 分学科打卡 -->
-    <el-dialog v-model="attVisible" title="考勤打卡" width="480px">
+    <!-- 打卡/补卡（共用弹窗；补卡可补打过去任意日期，也可点击日历中的空白历史日期快速补卡） -->
+    <el-dialog v-model="attVisible" :title="attTitle" width="480px">
       <el-form label-width="80px">
         <el-form-item label="学生">
           <span style="font-weight:600">{{ attStudent?.student_name }}</span>
@@ -60,7 +73,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="日期">
-          <el-date-picker v-model="attForm.date" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+          <el-date-picker v-model="attForm.date" type="date" value-format="YYYY-MM-DD" placeholder="打卡日期（可补卡）" style="width:100%" :clearable="false" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="attForm.status" style="width:100%">
@@ -89,10 +102,20 @@ const students = ref([]) // 完整学生（含学科课时，用于打卡）
 const attVisible = ref(false)
 const attSaving = ref(false)
 const attStudent = ref(null)
+const attTitle = ref('考勤打卡')
 const attForm = reactive({ subject_id: null, date: '', status: '正常', remark: '' })
 
 function todayStr() {
   const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${dd}`
+}
+
+// 补卡默认日期：昨天（漏打卡最常用场景）
+function yesterdayStr() {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${m}-${dd}`
@@ -122,6 +145,40 @@ function cellStatus(student, dayStr) {
   return rec ? rec.status : ''
 }
 
+// 今天是否已打卡（日历页“操作”列显示“已打卡”）
+// 优先看当月记录；跨月查看时回退到 /students 的 attended_today 字段
+function checkedInToday(s) {
+  if (cellStatus(s, todayStr())) return true
+  const full = students.value.find((x) => x.id === s.student_id)
+  return full ? !!full.attended_today : false
+}
+
+// 今日打卡进度：全部学生打卡完成后 complete=true（显示「今日全部已打卡」）
+const todayAttProgress = computed(() => {
+  const list = calendarStudents.value
+  const total = list.length
+  if (!total) return { total: 0, done: 0, complete: false }
+  const done = list.filter((s) => checkedInToday(s)).length
+  return { total, done, complete: done >= total }
+})
+
+// 是否为可补卡的历史空白日期（过去某天未记录 → 点击即可补卡）
+function isPastDay(dayStr) {
+  return dayStr < todayStr()
+}
+function isMakeupTarget(s, d) {
+  return isPastDay(d.dayStr) && !cellStatus(s, d.dayStr)
+}
+function cellTitle(s, d) {
+  const st = cellStatus(s, d.dayStr)
+  if (st) return `${s.student_name} ${d.dayStr} ${st}`
+  return isPastDay(d.dayStr) ? `${s.student_name} ${d.dayStr} 未记录（点击补卡）` : `${s.student_name} ${d.dayStr} 未记录`
+}
+function onCellClick(s, d) {
+  // 点击历史空白日期 → 快速补卡（自动带出该日期）
+  if (isMakeupTarget(s, d)) openAttendance(s, true, d.dayStr)
+}
+
 // 考勤状态 → 图标 class
 const STATUS_CLASS = { 正常: 'normal', 迟到: 'late', 缺勤: 'absent', 请假: 'leave', 早退: 'early' }
 function statusClass(status) {
@@ -145,12 +202,14 @@ async function loadStudents() {
   }
 }
 
-function openAttendance(s) {
+// isMakeup=true 走补卡：标题改为「补卡」，日期默认昨天；date 传入时（点击日历空白格）直接用该历史日期
+function openAttendance(s, isMakeup = false, date = null) {
   attStudent.value = s
   attForm.subject_id = null
-  attForm.date = todayStr()
+  attForm.date = date || (isMakeup ? yesterdayStr() : todayStr())
   attForm.status = '正常'
   attForm.remark = ''
+  attTitle.value = isMakeup ? `补卡 - ${s.student_name}` : `考勤打卡 - ${s.student_name}`
   attVisible.value = true
 }
 
@@ -249,4 +308,11 @@ onMounted(() => {
 .cal-day.is-today { background: #ecfdf5; color: #059669; font-weight: 700; }
 .cal-cell { padding: 4px 2px; }
 .cal-cell .cal-dot { display: block; margin: 0 auto; }
+/* 可补卡的历史空白日期：悬停高亮 + 小手提示，点击直接补卡 */
+.cal-cell.is-makeup-target { cursor: pointer; }
+.cal-cell.is-makeup-target .cal-dot { box-shadow: 0 0 0 1px #a7f3d0; }
+.cal-cell.is-makeup-target:hover { background: #ecfdf5; }
+.cal-cell.is-makeup-target:hover .cal-dot { background: #10b981; }
+.cal-cell.is-today { background: #f9fafb; }
+.cal-makeup-btn { margin-left: 2px; }
 </style>

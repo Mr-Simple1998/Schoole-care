@@ -240,9 +240,22 @@ def attendance_summary(
         b[key] += 1
         b["total"] += 1
         b["records"].append({"date": r.date.isoformat(), "status": r.status})
+    # 全部在范围学生都返回（含当月零考勤记录的学生），方便日历展示与补卡；
+    # 无记录的学生补 0 计数 + 空 records，前端可正常渲染「未记录」格子
     student_summary = [
-        {"student_id": sid, "student_name": name_map.get(sid, ""), **counts}
-        for sid, counts in by_student.items()
+        {
+            "student_id": sid,
+            "student_name": name_map.get(sid, ""),
+            "normal": 0,
+            "late": 0,
+            "absent": 0,
+            "leave": 0,
+            "early": 0,
+            "total": 0,
+            "records": [],
+            **by_student.get(sid, {}),
+        }
+        for sid in student_ids
     ]
 
     # ---- 教师上下班考勤汇总（整体标记；校长不展示）----

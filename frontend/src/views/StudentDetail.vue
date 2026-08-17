@@ -81,8 +81,12 @@
       <!-- 考勤 -->
       <el-tab-pane label="考勤打卡" name="attendance">
         <div class="tab-toolbar">
-          <!-- 学生分开管理：各角色只能给自己负责的学生打卡 -->
-          <el-button v-if="canCheckIn" type="primary" size="small" :icon="Plus" @click="openAttendance">打卡</el-button>
+          <!-- 学生分开管理：各角色只能给自己负责的学生打卡；今天已打卡显示“已打卡”，漏打历史日期用“补卡” -->
+          <template v-if="canCheckIn">
+            <el-tag v-if="student.attended_today" size="small" type="success" effect="plain">今日已打卡</el-tag>
+            <el-button v-else type="primary" size="small" :icon="Plus" @click="openAttendance(false)">打卡</el-button>
+            <el-button type="warning" size="small" plain @click="openAttendance(true)">补卡</el-button>
+          </template>
         </div>
         <!-- 学科课时概览 -->
         <div v-if="student.subject_sessions && student.subject_sessions.length" class="session-overview">
@@ -206,8 +210,11 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="attVisible" title="考勤打卡" width="480px">
+    <el-dialog v-model="attVisible" :title="attTitle" width="480px">
       <el-form :model="attForm" label-width="80px">
+        <el-form-item label="日期">
+          <el-date-picker v-model="attForm.date" type="date" value-format="YYYY-MM-DD" placeholder="打卡日期（可补卡）" style="width:100%" :clearable="false" />
+        </el-form-item>
         <el-form-item label="学科">
           <el-select v-model="attForm.subject_id" placeholder="请选择打卡学科" style="width:100%" filterable clearable>
             <el-option
@@ -294,6 +301,7 @@ const sessions = ref(null)
 
 const scoreVisible = ref(false)
 const attVisible = ref(false)
+const attTitle = ref('考勤打卡')
 const hwVisible = ref(false)
 const perfVisible = ref(false)
 
@@ -355,6 +363,15 @@ function todayStr() {
   return `${d.getFullYear()}-${m}-${dd}`
 }
 
+// 补卡默认日期：昨天（漏打卡最常用场景）
+function yesterdayStr() {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${dd}`
+}
+
 async function loadAll() {
   loading.value = true
   try {
@@ -396,12 +413,13 @@ async function exportTranscript() {
 }
 
 function openScore() { Object.assign(scoreForm, { subject: '', exam_type: '平时考', score: 0, exam_date: '', remark: '' }); scoreVisible.value = true }
-function openAttendance() {
-  const today = todayStr()
-  attForm.date = today
+// isMakeup=true 走补卡：标题改为「补卡」，日期默认昨天，也可在弹窗里改任意历史日期
+function openAttendance(isMakeup = false) {
+  attForm.date = isMakeup ? yesterdayStr() : todayStr()
   attForm.subject_id = null
   attForm.status = '正常'
   attForm.remark = ''
+  attTitle.value = isMakeup ? '补卡' : '考勤打卡'
   attVisible.value = true
 }
 function openHomework() { Object.assign(hwForm, { subject: '', content: '', assign_date: '', complete_status: '未完成', score: null }); hwVisible.value = true }

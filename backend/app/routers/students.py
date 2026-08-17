@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Student, User, UserRole
-from ..models_learning import Attendance
-from ..models_points import PointRecord
+from ..models_learning import Score, Attendance, Homework, ClassPerformance
+from ..models_income import FeeRecord, Invoice, RefundAdjustment, Installment, InstallmentRecord
+from ..models_points import PointRecord, Redemption
 from ..models_subject import Subject, StudentSubject
 from ..security import get_current_user, is_head_role, managed_campus_ids
 
@@ -288,6 +289,74 @@ def list_deleted_students(
     if current_user.campus_id:
         q = q.filter(Student.campus_id == current_user.campus_id)
     return [_student_out(s) for s in q.order_by(Student.id.desc()).all()]
+
+
+def _purge_student_related(db: Session, student_id: int):
+    """彻底删除某学生的全部关联数据（收费/账单/退费/分期/考勤/成绩/作业/课堂表现/课时/积分/兑换），
+    调用方随后删除学生档案本身。删除顺序：先子表（分期还款）再父表。"""
+    installment_ids = [r.id for r in db.query(Installment).filter(Installment.student_id == student_id).all()]
+    if installment_ids:
+        db.query(InstallmentRecord).filter(
+            InstallmentRecord.installment_id.in_(installment_ids)
+        ).delete(synchronize_session=False)
+    db.query(RefundAdjustment).filter(RefundAdjustment.student_id == student_id).delete(synchronize_session=False)
+    db.query(Installment).filter(Installment.student_id == student_id).delete(synchronize_session=False)
+    db.query(Invoice).filter(Invoice.student_id == student_id).delete(synchronize_session=False)
+    db.query(FeeRecord).filter(FeeRecord.student_id == student_id).delete(synchronize_session=False)
+    db.query(Score).filter(Score.student_id == student_id).delete(synchronize_session=False)
+    db.query(Attendance).filter(Attendance.student_id == student_id).delete(synchronize_session=False)
+    db.query(Homework).filter(Homework.student_id == student_id).delete(synchronize_session=False)
+    db.query(ClassPerformance).filter(ClassPerformance.student_id == student_id).delete(synchronize_session=False)
+    db.query(StudentSubject).filter(StudentSubject.student_id == student_id).delete(synchronize_session=False)
+    db.query(PointRecord).filter(PointRecord.student_id == student_id).delete(synchronize_session=False)
+    db.query(Redemption).filter(Redemption.student_id == student_id).delete(synchronize_session=False)
+
+
+@router.delete("/deleted/{student_id}")
+def purge_deleted_student(
+    student_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """彻底删除某名已删除学生及其全部数据（档案 + 收费/考勤/成绩/作业/课时/积分等），不可恢复。
+    仅校长可操作，与已删除学生列表同权限口径（归属校区后仅本校区）。"""
+    if current_user.role != UserRole.PRINCIPAL:
+        raise HTTPException(status_code=403, detail="仅校长可删除已删除学生数据")
+    student = db.query(Student).filter(
+        Student.id == student_id,
+        Student.org_id == current_user.org_id,
+        Student.deleted == True,  # noqa: E712
+    ).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="学生不存在或不在已删除名单中")
+    if current_user.campus_id and student.campus_id != current_user.campus_id:
+        raise HTTPException(status_code=403, detail="只能操作本校区学生")
+    name = student.name
+    _purge_student_related(db, student.id)
+    db.delete(student)
+    db.commit()
+    return {"detail": f"已彻底删除学生「{name}」的全部数据", "name": name}
+
+
+@router.delete("/deleted")
+def purge_all_deleted_students(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """一键清空：彻底删除全部已删除学生及其关联数据（仅校长，归属校区后仅本校区）"""
+    if current_user.role != UserRole.PRINCIPAL:
+        raise HTTPException(status_code=403, detail="仅校长可删除已删除学生数据")
+    q = db.query(Student).filter(Student.org_id == current_user.org_id, Student.deleted == True)  # noqa: E712
+    if current_user.campus_id:
+        q = q.filter(Student.campus_id == current_user.campus_id)
+    students = q.all()
+    count = 0
+    for st in students:
+        _purge_student_related(db, st.id)
+        db.delete(st)
+        count += 1
+    db.commit()
+    return {"detail": f"已彻底删除 {count} 名已删除学生", "count": count}
 
 
 @router.get("/{student_id}", response_model=StudentOut)

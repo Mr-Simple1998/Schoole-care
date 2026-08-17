@@ -33,6 +33,14 @@
 			"style": { "navigationBarTitleText": "全体学生考勤" }
 		},
 		{
+			"path": "pages/student/deleted",
+			"style": {
+				"navigationBarTitleText": "已删除学生",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
 			"path": "pages/income/income",
 			"style": { "navigationBarTitleText": "收费管理" }
 		},
