@@ -148,6 +148,7 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 10. **收入权限**：教师角色不可见机构月收入——`dashboard.py` 对 `UserRole.TEACHER` 将 `month_income` 置 0；小程序工作台「本月收入」卡片 `v-if="!store.isTeacher"` 隐藏。校区负责人/总校长可见（本校区/归属校区口径）。
 11. **新增教师固定为 teacher**：`/auth/register` 只允许 `role == "teacher"`；校区负责人（sub_principal）开号只能通过总校长在「校区管理」页操作（`POST /campuses/{id}/head`）。
 12. **打卡权限分离（学生分开管理）**：总校长/校区负责人/教师的学生分开，各角色只能给自己负责的学生打卡（`POST /learning/attendance` 校验 `teacher_id == 当前用户.id`，否则 403「只能给自己负责的学生打卡」）；总校长和校区负责人也可以拥有自己的学生（可被选为负责教师），此时同样只能给名下学生打卡。成绩/作业/课堂表现仍按原角色数据范围（教师=自己负责；校区负责人/总校长=本校区）。
+13. **新增学员一周未交费提醒**：在读学生入学/建档超过 7 天（`NEW_STUDENT_FEE_REMIND_DAYS=7`）且**没有任何交费记录**（无 FeeRecord）时，工作台提醒交费；仅提醒建档 30 天内（`NEW_STUDENT_REMIND_WINDOW_DAYS=30`）的新学员，避免长期未交费存量学生刷屏；范围与费用到期提醒一致（教师=自己负责 / 校区负责人=本校区 / 校长=归属校区）。
 
 ---
 
@@ -181,6 +182,15 @@ npm run build:mp-weixin    # 产物在 weapp/dist/build/mp-weixin
 
 ## 8. 近期改动记录
 
+- **2026-08-18 · 新增学员一周未交费提醒（工作台）**：
+  - 后端 `dashboard.py` 新增 `_new_student_unpaid_reminders`：在读学生入学/建档超过 7 天（一个礼拜）仍**无任何交费记录**（FeeRecord）时返回提醒（学生/负责教师/入学时间/已过天数），`GET /api/dashboard/overview` 新增 `new_student_fee_reminders` 字段；范围沿用 `_scope_students`（教师=自己负责，校区负责人=本校区，校长=归属校区/全校）。
+  - 规则：不足 7 天不提醒；**已交费（有 FeeRecord）自动取消提醒**；只提醒建档 30 天内的新学员（常量 `NEW_STUDENT_FEE_REMIND_DAYS=7` / `NEW_STUDENT_REMIND_WINDOW_DAYS=30`）；入学日期缺失时回退建档时间 `created_at`；已删除/退学学生不提醒。
+  - **醒目展示**：PC 工作台统计卡下方新增红色渐变横幅「新学员交费提醒：N 名学员入学一周仍未交费」+ 明细表格（学生/负责教师/入学时间/已过天数）+ 「记收费」按钮；小程序工作台统计卡下方新增红色横幅 + 明细 + 「去收费」按钮（教师端不显示收费入口，仅展示提醒）。
+  - **一键去收费**：横幅/行内按钮跳转收费管理页并携带 `?fee_student=<id>`（PC `/income`、小程序 `/pages/income/income`），收费页自动打开收费弹窗并预选该学生；记录收费后返回工作台提醒自动消失（后端按 FeeRecord 过滤 + 前端进入页面重新加载）。
+  - **移动端总欠费合并统计（欠费人 + 未缴费人）**：后端 `GET /api/dashboard/overview` 新增 `overdue_students`（按学生聚合「待缴/部分缴纳」账单：学生/负责教师/未缴金额/账单笔数）与 `overdue_student_count`；小程序工作台「总欠费」卡片升级为「总欠费（含未交费）」，副文字用**红色加粗**显示「欠费 X 人 · 未交费 Y 人」（`red-num` 样式），**不再弹明细窗口**（弹窗/未交费列表卡片均已移除，明细入口收敛为顶部红色横幅「⚠️ N 名学员入学一周未交费」，点击横幅直达收费页）。
+  - **交费后自动不再提醒（双维度闭环）**：欠费人基于 Invoice 状态（`POST /income/fees` 交费时自动把待缴账单更新为已缴清/部分缴纳 → 自动移出欠费人）；未交费新学员基于 FeeRecord 存在（记录收费即自动移出提醒）。冒烟验证：欠费 1500/2 人 → B 交费后剩 1000/1 人；新学员 C 记录收费后提醒清空，断言 PASS。
+  - 冒烟验证通过：后端「欠费/未交费统计与交费后自动消失」断言 PASS；小程序 2 个改动页面 SFC 编译 OK。
+  - **修复小程序「新增收费」报 `[object Object]`**：根因是收费表单缺少后端必填的 `pay_date`，提交被 FastAPI 422 校验拦截，而 `weapp/src/utils/request.js` 把数组形式的 `detail` 直接 `String()` 成 `[object Object]`。修复：① `income.vue` 表单补 `pay_date`（默认今天，新增「缴费日期」选择器）与 `payment_method`（默认现金），提交时一并携带；② `request.js` 新增 `extractDetail()`：detail 为数组（422 校验错误）时取第一条 `loc`+`msg` 显示「参数 xxx：Field required」等中文提示，根治对象被转成 `[object Object]` 的提示。已用真实接口复现（422）与修复（带 pay_date 保存成功）验证，测试数据已清理。
 - **2026-08-16 · 完整系统 Dockerfile（PC 前端 + 后端一体化镜像）**：
   - 根目录新增 `Dockerfile`（多阶段：node:22-alpine 构建前端 → python:3.14-slim 运行后端）与 `.dockerignore`；
   - 后端新增 `FRONTEND_DIST` 配置：设置后由 FastAPI 同端口托管 PC 前端构建产物（`/assets` 静态资源 + 其余路径兜底返回 `index.html`，支持 history 路由；`/api`、`/static`、`/docs` 优先匹配）；

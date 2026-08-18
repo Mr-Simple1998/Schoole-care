@@ -31,6 +31,35 @@
       </el-col>
     </el-row>
 
+    <!-- 新学员一周未交费提醒（醒目横幅 + 明细；记录收费后自动消失） -->
+    <transition name="slide-down">
+      <div v-if="newStudentReminders.length" class="nsb-wrap mt-16">
+        <div class="nsb-banner">
+          <div class="nsb-icon">⚠️</div>
+          <div class="nsb-text">
+            <div class="nsb-title">新学员交费提醒：{{ newStudentReminders.length }} 名学员入学一周仍未交费</div>
+            <div class="nsb-desc">入学超过 7 天未记录交费，请及时联系家长交费；记录收费后本提醒将自动消失</div>
+          </div>
+          <el-button v-if="userStore.isPrincipal || userStore.isSubPrincipal" type="warning" size="small" @click="$router.push('/income')">去收费</el-button>
+        </div>
+        <el-table :data="newStudentReminders" size="small" stripe class="nsb-table">
+          <el-table-column prop="student_name" label="学生" width="110" />
+          <el-table-column prop="teacher_name" label="负责教师" width="110" />
+          <el-table-column prop="enrollment_date" label="入学时间" width="120" />
+          <el-table-column label="已过天数" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" type="danger">{{ row.days_since }} 天</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="userStore.isPrincipal || userStore.isSubPrincipal" label="操作" width="90">
+            <template #default="{ row }">
+              <el-button size="small" type="primary" link @click="goFee(row)">记收费</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </transition>
+
     <!-- 缴费到期提醒 -->
     <transition name="slide-down">
       <el-card v-if="feeReminders.length" shadow="never" class="fee-remind-card mt-16">
@@ -255,6 +284,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import request from '@/utils/request'
 import { useUserStore } from '@/stores/user'
@@ -262,6 +292,7 @@ import { AlarmClock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const userStore = useUserStore()
+const router = useRouter()
 const incomeChartRef = ref()
 const subjectChartRef = ref()
 const catChartRef = ref()
@@ -314,6 +345,12 @@ const expireAlert = computed(() => {
 })
 
 const feeReminders = computed(() => overview.value.fee_expire_reminders || [])
+const newStudentReminders = computed(() => overview.value.new_student_fee_reminders || [])
+
+// 去收费：跳转收费管理页并自动打开收费弹窗、预选该学生；记录收费后工作台提醒自动消失
+function goFee(row) {
+  router.push({ path: '/income', query: { fee_student: row.student_id } })
+}
 
 const statCards = computed(() => {
   const cards = [
@@ -604,6 +641,46 @@ onBeforeUnmount(() => {
   gap: 6px;
   color: #f59e0b;
   font-weight: 600;
+}
+/* 新学员交费提醒（醒目横幅） */
+.nsb-wrap {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #fecaca;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.12);
+}
+.nsb-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+  flex-wrap: wrap;
+}
+.nsb-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.nsb-text {
+  flex: 1;
+  min-width: 200px;
+}
+.nsb-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.nsb-desc {
+  font-size: 12px;
+  opacity: 0.92;
+  margin-top: 3px;
+}
+.nsb-table {
+  background: #fff;
+}
+.nsb-table :deep(.el-table__inner-wrapper::before) {
+  display: none;
 }
 .chart-box {
   height: 320px;

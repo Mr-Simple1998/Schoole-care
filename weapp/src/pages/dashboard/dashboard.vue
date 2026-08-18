@@ -107,10 +107,19 @@
 				</view>
 				<view class="stat-card is-red" v-if="store.isPrincipal || store.isSubPrincipal">
 					<view class="stat-top">
-						<text class="stat-label">总欠费</text>
+						<text class="stat-label">总欠费（含未交费）</text>
 						<text class="stat-emoji">⚠️</text>
 					</view>
 					<text class="stat-num">¥{{ overview.total_unpaid || 0 }}</text>
+					<text class="stat-sub">欠费 <text class="red-num">{{ overdueStudentCount }}</text> 人 · 未交费 <text class="red-num">{{ newStudentReminders.length }}</text> 人</text>
+				</view>
+			</view>
+
+			<!-- 新学员一周未交费提醒（醒目横幅，点击直达收费页；记录收费后自动消失） -->
+			<view v-if="newStudentReminders.length" class="banner is-danger nsb-banner" @click="goIncome">
+				<view>
+					<view class="banner-title">⚠️ {{ newStudentReminders.length }} 名学员入学一周未交费</view>
+					<view class="banner-desc">入学超过 7 天未记录交费 · 点击去收费 · 记录收费后本提醒自动消失</view>
 				</view>
 			</view>
 
@@ -264,6 +273,14 @@ export default {
 		// 纯展示：是否存在已到期的提醒（决定横幅颜色）
 		hasExpired() {
 			return (this.overview.fee_expire_reminders || []).some((r) => r.days_left < 0);
+		},
+		// 新学员一周未交费提醒列表（入学超过 7 天仍无交费记录；记录收费后自动消失）
+		newStudentReminders() {
+			return (this.overview.new_student_fee_reminders) || [];
+		},
+		// 欠费人数（去重学生）
+		overdueStudentCount() {
+			return this.overview.overdue_student_count || 0;
 		},
 		// 平台管理员：机构开户统计（仅由 organizations 派生，纯展示）
 		totalPaid() {
@@ -488,4 +505,11 @@ export default {
 .cal-entry-title { font-size: 30rpx; font-weight: 700; color: #059669; }
 .cal-entry-sub { font-size: 24rpx; color: #6b7280; }
 .cal-arrow { font-size: 40rpx; color: #10b981; }
+.nsb-banner { margin-bottom: 20rpx; }
+/* 总欠费卡片上的红色人数 */
+.red-num {
+	color: #ef4444;
+	font-weight: 700;
+	font-size: 30rpx;
+}
 </style>

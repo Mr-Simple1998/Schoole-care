@@ -16,6 +16,8 @@ router = APIRouter()
 
 REMIND_DAYS = 7  # 提前 7 天提醒机构即将到期
 FEE_REMIND_DAYS = 5  # 提前 5 天提醒学生费用即将到期
+NEW_STUDENT_FEE_REMIND_DAYS = 7  # 新增学员入学超过 7 天（一个礼拜）仍无交费记录 → 工作台提醒交费
+NEW_STUDENT_REMIND_WINDOW_DAYS = 30  # 只提醒建档 30 天内的新学员，避免长期未交费的存量学生刷屏
 
 
 def _scope_students(q, db: Session, current_user: User):
@@ -80,11 +82,17 @@ def dashboard_overview(current_user: User = Depends(get_current_user), db: Sessi
             FeeRecord.pay_date >= month_start, FeeRecord.org_id == current_user.org_id
         ).scalar() or 0
 
-    # 总欠费
+    # 总欠费（按学生聚合欠费人，供移动端「总欠费」点击查看）
     overdue = db.query(Invoice).filter(Invoice.status.in_(["待缴", "部分缴纳"]), Invoice.org_id == current_user.org_id).all()
     total_unpaid = 0
+    inv_by_student: dict[int, dict] = {}
     for inv in overdue:
-        total_unpaid += (inv.amount - inv.paid_amount)
+        unpaid = (inv.amount - inv.paid_amount)
+        total_unpaid += unpaid
+        b = inv_by_student.setdefault(inv.student_id, {"unpaid": 0.0, "count": 0})
+        b["unpaid"] += unpaid
+        b["count"] += 1
+    overdue_students = _overdue_student_list(db, inv_by_student)
 
     # 今日考勤
     today_att_q = db.query(Attendance).filter(Attendance.date == today, Attendance.org_id == current_user.org_id)
@@ -100,6 +108,9 @@ def dashboard_overview(current_user: User = Depends(get_current_user), db: Sessi
     # 费用到期提醒（每个学生取最近一条收费记录，到期/即将到期即提醒）
     fee_reminders = _fee_expire_reminders(db, current_user, today)
 
+    # 新增学员一周未交费提醒（入学超过 7 天仍无交费记录 → 提醒交费）
+    new_student_fee_reminders = _new_student_unpaid_reminders(db, current_user, today)
+
     return {
         "total_students": total_students,
         "month_income": round(month_income, 2),
@@ -110,6 +121,9 @@ def dashboard_overview(current_user: User = Depends(get_current_user), db: Sessi
         "role": current_user.role,
         "org_expire": _org_expire_info(db, current_user.org_id),
         "fee_expire_reminders": fee_reminders,
+        "new_student_fee_reminders": new_student_fee_reminders,
+        "overdue_students": overdue_students,
+        "overdue_student_count": len(overdue_students),
     }
 
 
@@ -182,6 +196,87 @@ def _fee_expire_reminders(db: Session, current_user: User, today: date):
 
     reminders.sort(key=lambda x: x["days_left"])
     return reminders
+
+
+def _new_student_unpaid_reminders(db: Session, current_user: User, today: date):
+    """新增学员一周未交费提醒：入学超过 7 天（一个礼拜）仍没有任何交费记录的在读学生。
+    范围与费用到期提醒一致：教师=自己负责的学生；校区负责人=管辖校区；校长=归属校区（未归属=全校）。
+    只提醒建档 30 天内的新学员，避免长期未交费的存量学生长期刷屏。
+    """
+    student_q = db.query(Student).filter(
+        Student.org_id == current_user.org_id,
+        Student.deleted == False,  # noqa: E712
+        Student.status == "在读",
+    )
+    student_q = _scope_students(student_q, db, current_user)
+    students = student_q.all()
+    if not students:
+        return []
+
+    student_ids = [s.id for s in students]
+    # 有任意交费记录（FeeRecord）即视为已交费，不再提醒
+    paid_ids = {
+        r[0] for r in db.query(FeeRecord.student_id).filter(
+            FeeRecord.student_id.in_(student_ids),
+            FeeRecord.org_id == current_user.org_id,
+        ).all()
+    }
+    teacher_ids = {s.teacher_id for s in students if s.teacher_id}
+    teachers = {u.id: u for u in db.query(User).filter(User.id.in_(teacher_ids)).all()} if teacher_ids else {}
+
+    cutoff = today - timedelta(days=NEW_STUDENT_FEE_REMIND_DAYS)   # 超过一个礼拜仍未交费
+    window_start = today - timedelta(days=NEW_STUDENT_REMIND_WINDOW_DAYS)  # 仅建档 30 天内
+
+    reminders = []
+    for st in students:
+        if st.id in paid_ids:
+            continue
+        # 入学日期缺失时回退到建档时间（created_at）
+        ref_date = st.enrollment_date or (st.created_at.date() if st.created_at else None)
+        if not ref_date:
+            continue
+        if ref_date > cutoff:      # 入学不足 7 天，暂不提醒
+            continue
+        if ref_date < window_start:  # 超过 30 天仍无交费，不再提醒
+            continue
+        t = teachers.get(st.teacher_id)
+        reminders.append({
+            "student_id": st.id,
+            "student_name": st.name,
+            "teacher_name": t.name if t else "",
+            "teacher_phone": t.phone if t else "",
+            "enrollment_date": ref_date.isoformat(),
+            "days_since": (today - ref_date).days,
+            "remind_type": "new_student",
+        })
+
+    reminders.sort(key=lambda x: x["days_since"], reverse=True)
+    return reminders
+
+
+def _overdue_student_list(db: Session, inv_by_student: dict[int, dict]):
+    """把「待缴/部分缴纳」账单按学生聚合为欠费人列表（含学生名/负责教师/未缴金额/账单笔数）。
+    交费后账单状态自动更新为「已缴清」，对应学生自动从本列表消失。"""
+    if not inv_by_student:
+        return []
+    student_ids = list(inv_by_student.keys())
+    st_map = {s.id: s for s in db.query(Student).filter(Student.id.in_(student_ids)).all()}
+    teacher_ids = {s.teacher_id for s in st_map.values() if s.teacher_id}
+    t_map = {u.id: u for u in db.query(User).filter(User.id.in_(teacher_ids)).all()} if teacher_ids else {}
+
+    rows = []
+    for sid, b in inv_by_student.items():
+        st = st_map.get(sid)
+        t = t_map.get(st.teacher_id) if st else None
+        rows.append({
+            "student_id": sid,
+            "student_name": st.name if st else "",
+            "teacher_name": t.name if t else "",
+            "unpaid": round(b["unpaid"], 2),
+            "invoice_count": b["count"],
+        })
+    rows.sort(key=lambda x: x["unpaid"], reverse=True)
+    return rows
 
 
 @router.get("/org-expire")

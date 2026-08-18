@@ -91,6 +91,12 @@
 				<view class="field"><text class="label">收费项目</text><input class="input" v-model="feeForm.fee_type" placeholder="如课时费" /></view>
 				<view class="field"><text class="label">金额</text><input class="input" type="number" v-model="feeForm.amount" placeholder="金额" /></view>
 				<view class="field">
+					<text class="label">缴费日期</text>
+					<picker mode="date" :value="feeForm.pay_date" @change="e => feeForm.pay_date = e.detail.value">
+						<view class="input">{{ feeForm.pay_date || '请选择' }}</view>
+					</picker>
+				</view>
+				<view class="field">
 					<text class="label">缴费时间段</text>
 					<picker :range="periods" @change="e => feeForm.payment_period=periods[e.detail.value]">
 						<view class="input">{{ feeForm.payment_period || '请选择' }}</view>
@@ -112,6 +118,14 @@ import { get, post } from '../../utils/request';
 
 const PERIODS = ['一月', '半学期', '一年'];
 
+// 今天日期字符串 YYYY-MM-DD（新增收费默认缴费日期）
+function todayStr() {
+	const d = new Date();
+	const m = String(d.getMonth() + 1).padStart(2, '0');
+	const dd = String(d.getDate()).padStart(2, '0');
+	return d.getFullYear() + '-' + m + '-' + dd;
+}
+
 export default {
 	data() {
 		return {
@@ -121,7 +135,7 @@ export default {
 			students: [],
 			showAdd: false,
 			periods: PERIODS,
-			feeForm: { student_id: null, fee_type: '', amount: '', payment_period: '', total_sessions: '' }
+			feeForm: { student_id: null, fee_type: '', amount: '', pay_date: todayStr(), payment_method: '现金', payment_period: '', total_sessions: '' }
 		};
 	},
 	computed: {
@@ -153,7 +167,18 @@ export default {
 			return this.round2((this.overdue || []).reduce((s, o) => s + Number(o.unpaid || 0), 0));
 		}
 	},
-	onLoad() { this.loadAll(); },
+	onLoad(options) {
+		this.loadAll().then(() => {
+			// 从工作台「新学员交费提醒」跳转而来：自动打开收费弹窗并预选该学生
+			const sid = Number(options && options.fee_student);
+			if (sid && this.students.some(s => s.id === sid)) {
+				this.feeForm.student_id = sid;
+				this.feeForm.fee_type = '学费';
+				this.showAdd = true;
+				uni.showToast({ title: '请为该学生记录收费', icon: 'none' });
+			}
+		});
+	},
 	methods: {
 		async loadAll() {
 			try {
@@ -169,11 +194,13 @@ export default {
 			}
 			await post('/income/fees', Object.assign({}, this.feeForm, {
 				amount: Number(this.feeForm.amount),
+				pay_date: this.feeForm.pay_date || todayStr(),
+				payment_method: this.feeForm.payment_method || '现金',
 				total_sessions: this.feeForm.total_sessions ? Number(this.feeForm.total_sessions) : null
 			}));
 			uni.showToast({ title: '已保存', icon: 'success' });
 			this.showAdd = false;
-			this.feeForm = { student_id: null, fee_type: '', amount: '', payment_period: '', total_sessions: '' };
+			this.feeForm = { student_id: null, fee_type: '', amount: '', pay_date: todayStr(), payment_method: '现金', payment_period: '', total_sessions: '' };
 			this.loadAll();
 		},
 		/* ===== 纯展示 helper ===== */

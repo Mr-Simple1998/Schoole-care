@@ -36,6 +36,27 @@ function showErrToast(title) {
 	uni.showToast({ title, icon: 'none', duration: 2500 });
 }
 
+// 从后端错误响应里提取可读的中文提示：
+// - detail 为字符串（业务错误）→ 直接显示
+// - detail 为数组（FastAPI 422 校验错误，元素是 {loc,msg}）→ 取第一条 msg，避免显示 [object Object]
+// - message 字符串 → 显示
+function extractDetail(data) {
+	if (!data) return '请求失败';
+	const d = data.detail;
+	if (typeof d === 'string') return d;
+	if (Array.isArray(d) && d.length) {
+		const first = d[0] || {};
+		const loc = Array.isArray(first.loc) && first.loc.length ? first.loc.join('.') : '';
+		const msg = first.msg || '';
+		if (loc && msg) return `参数 ${loc}：${msg}`;
+		if (msg) return msg;
+		if (loc) return `参数错误：${loc}`;
+		return '请求参数有误';
+	}
+	if (typeof data.message === 'string') return data.message;
+	return '请求失败';
+}
+
 export function request(options) {
 	return new Promise((resolve, reject) => {
 		const header = Object.assign({}, options.header || {});
@@ -60,8 +81,8 @@ export function request(options) {
 					toLogin();
 					reject(res.data || { detail: '未授权' });
 				} else {
-					const msg = (res.data && (res.data.detail || res.data.message)) || '请求失败';
-					if (!options.silent) showErrToast(String(msg));
+					const msg = extractDetail(res.data);
+					if (!options.silent) showErrToast(msg);
 					reject(res.data || {});
 				}
 			},

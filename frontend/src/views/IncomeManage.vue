@@ -345,11 +345,14 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 const PERIOD_DAYS = { '一月': 30, '半学期': 60, '一年': 365 }
+
+const route = useRoute()
 
 const activeTab = ref('fees')
 const studentFilter = ref('all')
@@ -443,9 +446,16 @@ async function loadAll() {
   installments.value = await request.get('/income/installments')
 }
 
-function openFeeDialog() {
-  Object.assign(feeForm, { student_id: null, fee_type: '学费', amount: 0, pay_date: '', payment_method: '现金', payment_period: '', total_sessions: null, remark: '' })
+function openFeeDialog(studentId = null) {
+  Object.assign(feeForm, { student_id: studentId, fee_type: '学费', amount: 0, pay_date: todayStr(), payment_method: '现金', payment_period: '', total_sessions: null, remark: '' })
   feeVisible.value = true
+}
+
+function todayStr() {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${dd}`
 }
 function openInvoiceDialog() {
   Object.assign(invoiceForm, { student_id: null, item: '', amount: 0, due_date: '' })
@@ -499,7 +509,16 @@ async function payInstallment(row) {
   loadAll()
 }
 
-onMounted(loadAll)
+onMounted(async () => {
+  await loadAll()
+  // 从工作台「新学员交费提醒」跳转而来：自动打开收费弹窗并预选学生，记录收费后提醒自动消失
+  const sid = Number(route.query.fee_student)
+  if (sid) {
+    const st = students.value.find((s) => s.id === sid)
+    openFeeDialog(sid)
+    ElMessage.info(st ? `请为「${st.name}」记录收费，保存后工作台提醒将自动消失` : '请为所选学生记录收费')
+  }
+})
 </script>
 
 <style scoped>
