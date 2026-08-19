@@ -1,18 +1,17 @@
 @echo off
-chcp 65001 >nul
 setlocal
 
 REM ============================================
-REM   小程序一键构建 + 自动打开微信开发者工具
-REM   1) 重新编译 uni-app -> dist\build\mp-weixin
-REM   2) 用开发者工具 CLI 打开正确的项目目录
+REM   С����һ������ + �Զ���΢�ſ����߹���
+REM   1) ���±��� uni-app -^> dist\build\mp-weixin
+REM   2) �ÿ����߹��� CLI ����ȷ����ĿĿ¼
 REM ============================================
 
 set "ROOT=%~dp0"
-set "CLI=E:\微信小程序开发工具\微信web开发者工具\cli.bat"
+set "CLI=E:\΢��С���򿪷�����\΢��web�����߹���\cli.bat"
 set "TARGET=%ROOT%weapp\dist\build\mp-weixin"
 
-REM ---- 临时把常见 Node 安装目录加入 PATH ----
+REM ---- ��ʱ�ѳ��� Node ��װĿ¼���� PATH ----
 if exist "%LOCALAPPDATA%\Programs\Node\" (
     for /d %%i in ("%LOCALAPPDATA%\Programs\Node\*") do set "PATH=%%i;!PATH!"
 )
@@ -20,44 +19,44 @@ if exist "E:\Nod.js" set "PATH=E:\Nod.js;!PATH!"
 
 where npm >nul 2>nul
 if errorlevel 1 (
-    echo [错误] 未找到 npm，请先安装 Node.js 并勾选 "Add to PATH"。
+    echo [����] δ�ҵ� npm�����Ȱ�װ Node.js ����ѡ "Add to PATH"��
     pause
     exit /b 1
 )
 
 echo ============================================
-echo   小程序一键构建 + 打开开发者工具
+echo   С����һ������ + �򿪿����߹���
 echo ============================================
 
-echo [1/2] 构建小程序（npm run build:mp-weixin）...
+echo [1/2] ����С����npm run build:mp-weixin��...
 cd /d "%ROOT%weapp"
 call npm run build:mp-weixin
 if errorlevel 1 (
-    echo [错误] 构建失败，请查看上方错误信息。
+    echo [����] ����ʧ�ܣ���鿴�Ϸ�������Ϣ��
     pause
     exit /b 1
 )
-echo [1/2] 构建完成。
+echo [1/2] ������ɡ�
 
-echo [2/2] 打开微信开发者工具...
+echo [2/2] ��΢�ſ����߹���...
 if not exist "%CLI%" (
-    echo [错误] 未找到开发者工具 CLI：%CLI%
-    echo 请手动导入项目目录：
+    echo [����] δ�ҵ������߹��� CLI��%CLI%
+    echo ���ֶ�������ĿĿ¼��
     echo     %TARGET%
     pause
     exit /b 1
 )
 call "%CLI%" open --project "%TARGET%"
 if errorlevel 1 (
-    echo [提示] 自动打开失败。
-    echo   若提示未开启服务端口：开发者工具 -^> 设置 -^> 安全设置 -^> 开启"服务端口"，然后重跑本脚本。
-    echo   也可以手动导入目录：
+    echo [��ʾ] �Զ���ʧ�ܡ�
+    echo   ����ʾδ��������˿ڣ������߹��� -^> ���� -^> ��ȫ���� -^> ����"����˿�"��Ȼ�����ܱ��ű���
+    echo   Ҳ�����ֶ�����Ŀ¼��
     echo       %TARGET%
     pause
     exit /b 1
 )
-echo [2/2] 已请求开发者工具打开项目，请稍候（若工具未运行会自动启动）。
+echo [2/2] �����󿪷��߹��ߴ���Ŀ�����Ժ�������δ���л��Զ���������
 echo.
-echo 打开后请确认：AppID = wxb50df87e7a46f2c6
-echo 首次使用请用 admin / admin123 点「登录并绑定微信」。
+echo �򿪺���ȷ�ϣ�AppID = wxb50df87e7a46f2c6
+echo �״�ʹ������ admin / admin123 �㡸��¼����΢�š���
 pause
