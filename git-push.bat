@@ -37,7 +37,7 @@ if "!HAS!"=="1" (
     set /p MSG=请输入提交说明（直接回车用默认）: 
     if "!MSG!"=="" set "MSG=update %date% %time%"
     > "%TEMP%\dsh_git_msg.txt" echo !MSG!
-    powershell -NoProfile -Command "$s=[IO.File]::ReadAllText($env:TEMP+'\dsh_git_msg.txt',[Text.Encoding]::GetEncoding(936));[IO.File]::WriteAllText($env:TEMP+'\dsh_git_msg_utf8.txt',$s,[Text.Encoding]::UTF8)"
+    powershell -NoProfile -Command "$s=[IO.File]::ReadAllText($env:TEMP+'\dsh_git_msg.txt',[Text.Encoding]::GetEncoding(936));[IO.File]::WriteAllText($env:TEMP+'\dsh_git_msg_utf8.txt',$s,(New-Object System.Text.UTF8Encoding($false)))"
     git add -A
     git commit -F "%TEMP%\dsh_git_msg_utf8.txt"
     del "%TEMP%\dsh_git_msg.txt" "%TEMP%\dsh_git_msg_utf8.txt" 2>nul
