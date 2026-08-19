@@ -1,0 +1,3 @@
+# Task 3: Reduce PC Initial Work
+
+Modify `frontend/src/router/index.js`, `frontend/src/main.js`, and only the existing chart/table views needed. Replace static route view imports with async `() => import(...)` components while preserving paths, names, guards, and metadata. Replace `import * as ElementPlusIconsVue` with exact icon components actually used by templates, preserving component names. In `PlatformManage.vue`, dynamically import ECharts inside the existing chart mount path and preserve dispose/resize/options. Do not add dependencies, change UI behavior, or alter APIs. Run `npm run build` from `frontend` if possible, write `.superpowers/sdd/task-3-report.md`, and report environment blockers.

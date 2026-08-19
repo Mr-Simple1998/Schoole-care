@@ -339,7 +339,6 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import * as echarts from 'echarts'
 import request from '@/utils/request'
 
 const organizations = ref([])
@@ -360,6 +359,7 @@ const createFormRef = ref()
 const paymentRows = ref([])
 const monthChartRef = ref()
 let monthChart = null
+let disposed = false
 
 const createForm = reactive({ org_name: '', contact: '', username: '', password: '', phone: '', plan_type: '', fee_amount: 0, payment_period: '' })
 const createRules = {
@@ -413,16 +413,21 @@ function orgStatusText(st, date) {
 
 async function loadData() {
   organizations.value = await request.get('/platform/organizations')
+  if (disposed) return
   stat.value = await request.get('/platform/payments/statistics')
+  if (disposed) return
   platOverview.value = await request.get('/platform/overview')
-  renderMonthChart()
+  if (disposed) return
+  await renderMonthChart()
 }
 
-function renderMonthChart() {
+async function renderMonthChart() {
   const rows = stat.value.by_month || []
-  if (!rows.length) return
+  if (!rows.length || disposed) return
+  const { init } = await import('echarts')
+  if (disposed || !monthChartRef.value) return
   if (!monthChart) {
-    monthChart = echarts.init(monthChartRef.value)
+    monthChart = init(monthChartRef.value)
   }
   monthChart.setOption({
     tooltip: { trigger: 'axis' },
@@ -539,10 +544,13 @@ function handleResize() {
 
 onMounted(async () => {
   await loadData()
-  nextTick(() => window.addEventListener('resize', handleResize))
+  if (!disposed) nextTick(() => {
+    if (!disposed) window.addEventListener('resize', handleResize)
+  })
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   window.removeEventListener('resize', handleResize)
   monthChart && monthChart.dispose()
 })

@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -122,10 +122,12 @@ def _fee_with_name(fee, student=None):
 
 
 @router.get("/fees", response_model=list[FeeOut])
-def list_fees(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_fees(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(FeeRecord).filter(FeeRecord.org_id == current_user.org_id)
     q = _scope_income_students(q, db, current_user)
-    fees = q.order_by(FeeRecord.pay_date.desc()).all()
+    q = q.order_by(FeeRecord.pay_date.desc(), FeeRecord.id.desc())
+    fees = (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
     result = []
     for f in fees:
         item = FeeOut.model_validate(f)
@@ -243,10 +245,14 @@ def create_invoice(data: InvoiceCreate, current_user: User = Depends(get_current
 
 
 @router.get("/invoices", response_model=list[InvoiceOut])
-def list_invoices(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_invoices(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(Invoice).filter(Invoice.org_id == current_user.org_id)
     q = _scope_income_students(q, db, current_user)
-    invoices = q.order_by(Invoice.created_at.desc()).all()
+    if page is not None:
+        q = q.order_by(Invoice.created_at.desc(), Invoice.id.desc())
+        invoices = q.offset((page - 1) * page_size).limit(page_size).all()
+    else:
+        invoices = q.all()
     result = []
     for inv in invoices:
         item = InvoiceOut.model_validate(inv)
@@ -258,11 +264,15 @@ def list_invoices(current_user: User = Depends(get_current_user), db: Session = 
 
 
 @router.get("/overdue")
-def list_overdue(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_overdue(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """欠费/未缴提醒：返回待缴账单及学生信息"""
     q = db.query(Invoice).filter(Invoice.status.in_(["待缴", "部分缴纳"]), Invoice.org_id == current_user.org_id)
     q = _scope_income_students(q, db, current_user)
-    invoices = q.all()
+    if page is not None:
+        q = q.order_by(Invoice.created_at.desc(), Invoice.id.desc())
+        invoices = q.offset((page - 1) * page_size).limit(page_size).all()
+    else:
+        invoices = q.all()
     result = []
     for inv in invoices:
         st = db.query(Student).filter(Student.id == inv.student_id).first()
@@ -326,11 +336,14 @@ def create_refund(data: RefundCreate, current_user: User = Depends(get_current_u
 
 
 @router.get("/refunds", response_model=list[RefundOut])
-def list_refunds(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_refunds(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(RefundAdjustment).filter(RefundAdjustment.org_id == current_user.org_id)
     q = _scope_income_students(q, db, current_user)
     result = []
-    for r in q.order_by(RefundAdjustment.created_at.desc()).all():
+    q = q.order_by(RefundAdjustment.created_at.desc(), RefundAdjustment.id.desc())
+    rows = (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
+    for r in rows:
         item = RefundOut.model_validate(r)
         st = db.query(Student).filter(Student.id == r.student_id).first()
         item.student_name = st.name if st else None
@@ -395,10 +408,12 @@ def create_installment(data: InstallmentCreate, current_user: User = Depends(get
 
 
 @router.get("/installments", response_model=list[InstallmentOut])
-def list_installments(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_installments(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(Installment).filter(Installment.org_id == current_user.org_id)
     q = _scope_income_students(q, db, current_user)
-    insts = q.order_by(Installment.created_at.desc()).all()
+    q = q.order_by(Installment.created_at.desc(), Installment.id.desc())
+    insts = (q.offset((page - 1) * page_size).limit(page_size).all()
+             if page is not None else q.all())
     result = []
     for i in insts:
         st = db.query(Student).filter(Student.id == i.student_id).first()

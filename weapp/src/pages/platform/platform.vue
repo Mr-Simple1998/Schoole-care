@@ -4,7 +4,7 @@
 		<view class="stat-grid">
 			<view class="stat-card is-blue">
 				<view class="stat-top"><text class="stat-label">机构总数</text><text class="stat-emoji">🏢</text></view>
-				<text class="stat-num">{{ organizations.length }}</text>
+				<text class="stat-num">{{ orgCount }}</text>
 				<text class="stat-sub">已开户机构</text>
 			</view>
 			<view class="stat-card is-green">
@@ -105,7 +105,8 @@
 		<view v-if="!organizations.length" class="empty">暂无机构，点击上方「新校长开户」创建</view>
 
 		<!-- 机构列表分页 -->
-		<view v-if="pagedOrgs.length && organizations.length > pagedOrgs.length" class="load-more" @click="loadMoreOrgs">
+		<view v-if="orgPage > 1" class="load-more" @click="loadOrgs(orgPage - 1)"><text>上一页</text></view>
+		<view v-if="pagedOrgs.length && !orgDone" class="load-more" @click="loadMoreOrgs">
 			<text>已加载 {{ pagedOrgs.length }} / {{ organizations.length }} 家机构，点击加载更多</text>
 		</view>
 		<view v-else-if="pagedOrgs.length" class="load-more all-loaded">
@@ -331,9 +332,13 @@ export default {
 			store: useUserStore(),
 			organizations: [],
 			stat: {},
+			overview: {},
 			// 机构列表前端分页（机构卡片含运营概况，较多时避免整页渲染卡顿）
+			orgPage: 1,
 			pageSize: 10,
-			visibleCount: 10,
+			orgDone: false,
+			orgLoading: false,
+			orgSeq: 0,
 			saving: false,
 			showCreate: false,
 			showEdit: false,
@@ -357,17 +362,16 @@ export default {
 		periodLabels() { return PERIODS; },
 		periodValues() { return PERIODS; },
 		totalPaid() {
-			return this.organizations.reduce((s, o) => s + (o.total_paid || 0), 0);
+			return this.overview.total_paid ?? this.organizations.reduce((s, o) => s + (o.total_paid || 0), 0);
 		},
+		orgCount() { return this.overview.org_count ?? this.organizations.length; },
 		expiringCount() {
-			return this.organizations.filter(o => o.expire_status === 'expiring').length;
+			return this.overview.expiring_count ?? this.organizations.filter(o => o.expire_status === 'expiring').length;
 		},
 		expiredCount() {
-			return this.organizations.filter(o => o.expire_status === 'expired').length;
+			return this.overview.expired_count ?? this.organizations.filter(o => o.expire_status === 'expired').length;
 		},
-		pagedOrgs() {
-			return this.organizations.slice(0, this.visibleCount);
-		}
+		pagedOrgs() { return this.organizations; }
 	},
 	onShow() {
 		this.loadData();
@@ -376,16 +380,14 @@ export default {
 		this.loadData().then(() => uni.stopPullDownRefresh());
 	},
 	onReachBottom() {
-		this.loadMoreOrgs();
+		if (!this.orgDone) this.loadMoreOrgs();
 	},
 	methods: {
 		fmt(n) {
 			return Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
 		},
 		loadMoreOrgs() {
-			if (this.visibleCount < this.organizations.length) {
-				this.visibleCount += this.pageSize;
-			}
+			this.loadOrgs(this.orgPage + 1);
 		},
 		planTypeText(v) {
 			const t = PLAN_TYPES.find(x => x.value === v);
@@ -430,10 +432,27 @@ export default {
 		},
 		async loadData() {
 			try {
-				this.organizations = await get('/platform/organizations');
-				this.visibleCount = this.pageSize;
-				this.stat = await get('/platform/payments/statistics');
+				await Promise.all([
+					this.loadOrgs(1),
+					get('/platform/payments/statistics').then(rows => { this.stat = rows; }),
+					get('/platform/overview').then(rows => { this.overview = rows; }),
+				]);
 			} catch (e) {}
+		},
+		async loadOrgs(page) {
+			if (this.orgLoading) return;
+			this.orgLoading = true;
+			const requestSeq = ++this.orgSeq;
+			try {
+				const rows = await get('/platform/organizations', { page, page_size: this.pageSize });
+				if (requestSeq !== this.orgSeq) return;
+				this.organizations = rows;
+				this.orgPage = page;
+				this.orgDone = rows.length < this.pageSize;
+			} catch (e) {
+			} finally {
+				if (requestSeq === this.orgSeq) this.orgLoading = false;
+			}
 		},
 		// ---- 新校长开户 ----
 		openCreate() {

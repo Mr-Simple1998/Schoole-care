@@ -27,6 +27,13 @@ function toLogin() {
 	uni.reLaunch({ url: '/pages/login/login' });
 }
 
+function cleanParams(params) {
+	if (!params || typeof params !== 'object') return params;
+	return Object.fromEntries(
+		Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
+	);
+}
+
 // 错误 toast 去重：并发请求失败时只提示一次，避免连续弹窗刷屏
 let lastToast = { title: '', time: 0 };
 function showErrToast(title) {
@@ -70,7 +77,7 @@ export function request(options) {
 		uni.request({
 			url: BASE_URL + options.url,
 			method: options.method || 'GET',
-			data: options.data || {},
+			data: (options.method || 'GET').toUpperCase() === 'GET' ? cleanParams(options.data || {}) : (options.data || {}),
 			header,
 			timeout: options.timeout || 15000,
 			success(res) {

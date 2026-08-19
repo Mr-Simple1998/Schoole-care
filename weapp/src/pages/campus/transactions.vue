@@ -39,11 +39,10 @@
 		<view v-if="!txns.length && !loading" class="empty">暂无收支记录</view>
 
 		<!-- 加载更多 -->
-		<view v-if="pagedTxns.length && txns.length > pagedTxns.length" class="load-more" @click="loadMore">
-			<text>已加载 {{ pagedTxns.length }} / {{ txns.length }} 条，点击加载更多</text>
-		</view>
-		<view v-else-if="pagedTxns.length" class="load-more all-loaded">
-			<text>已全部加载（共 {{ txns.length }} 条）</text>
+		<view v-if="txns.length" class="pager">
+			<button class="pager-btn" :disabled="page === 1 || loading" @click="load(page - 1)">上一页</button>
+			<text>第 {{ page }} 页</text>
+			<button class="pager-btn" :disabled="done || loading" @click="load(page + 1)">下一页</button>
 		</view>
 	</view>
 </template>
@@ -59,9 +58,10 @@ export default {
 			campusId: null,
 			kind: null,
 			loading: false,
-			// 前端分页：一次只渲染 20 条，滚动到底加载更多
-			pageSize: 20,
-			visibleCount: 20,
+			page: 1,
+			pageSize: 10,
+			done: false,
+			requestSeq: 0,
 			kindLabels: ['全部类型', '收入', '支出'],
 			kindValues: [null, 'income', 'expense']
 		};
@@ -81,9 +81,7 @@ export default {
 			const idx = this.kindValues.indexOf(this.kind);
 			return this.kindLabels[idx] || '全部类型';
 		},
-		pagedTxns() {
-			return this.txns.slice(0, this.visibleCount);
-		}
+		pagedTxns() { return this.txns; }
 	},
 	onLoad(options) {
 		if (options && options.campus_id !== undefined && options.campus_id !== '') {
@@ -92,45 +90,45 @@ export default {
 		this.load();
 	},
 	onPullDownRefresh() {
-		this.load(true).then(() => uni.stopPullDownRefresh());
+		this.load(1, true).then(() => uni.stopPullDownRefresh());
 	},
 	onReachBottom() {
-		this.loadMore();
+		if (!this.done) this.load(this.page + 1);
 	},
 	methods: {
 		fmt(n) {
 			return Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
 		},
-		async load(refresh = false) {
+		async load(page = 1, refresh = false) {
 			if (!refresh) this.loading = true;
+			const requestSeq = ++this.requestSeq;
 			try {
-				const params = {};
+				const params = { page, page_size: this.pageSize };
 				if (this.campusId) params.campus_id = this.campusId;
 				if (this.kind) params.kind = this.kind;
-				this.txns = await get('/campuses/transactions', params);
-				this.visibleCount = this.pageSize;
+				const rows = await get('/campuses/transactions', params);
+				if (requestSeq !== this.requestSeq) return;
+				this.txns = rows;
+				this.page = page;
+				this.done = rows.length < this.pageSize;
 			} catch (e) {
 			} finally {
-				this.loading = false;
+				if (requestSeq === this.requestSeq) this.loading = false;
 			}
+			if (this.campuses.length) return;
 			try {
 				// 用概况接口取校区下拉：负责人只见自己校区
 				const ov = await get('/campuses');
 				this.campuses = (ov.items || []).map(c => ({ id: c.id, name: c.name }));
 			} catch (e) {}
 		},
-		loadMore() {
-			if (this.visibleCount < this.txns.length) {
-				this.visibleCount += this.pageSize;
-			}
-		},
 		onCampusChange(idx) {
 			this.campusId = this.campusValues[idx];
-			this.load();
+			this.load(1);
 		},
 		onKindChange(idx) {
 			this.kind = this.kindValues[idx];
-			this.load();
+			this.load(1);
 		},
 		delTxn(t) {
 			uni.showModal({
@@ -198,11 +196,7 @@ export default {
 .link { font-size: 26rpx; }
 .link.danger { color: #ef4444; }
 .empty { text-align: center; color: #c0c4cc; padding: 60rpx 0; font-size: 26rpx; }
-.load-more {
-	text-align: center;
-	padding: 24rpx 0;
-	font-size: 24rpx;
-	color: #10b981;
-}
-.load-more.all-loaded { color: #c0c4cc; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 20rpx; padding: 24rpx 0; color: #606266; font-size: 24rpx; }
+.pager-btn { margin: 0; min-width: 140rpx; font-size: 24rpx; color: #10b981; background: #fff; border: 1rpx solid #10b981; }
+.pager-btn[disabled] { color: #c0c4cc; border-color: #e5e7eb; }
 </style>

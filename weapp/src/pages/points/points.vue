@@ -42,7 +42,8 @@
 				</view>
 			</view>
 			<view v-if="!records.length" class="empty">暂无积分记录</view>
-			<view v-if="pagedRecords.length && records.length > pagedRecords.length" class="load-more" @click="loadMoreRecords">
+			<view v-if="recordPage > 1" class="load-more" @click="loadRecords(recordPage - 1)"><text>上一页</text></view>
+			<view v-if="pagedRecords.length && !recordDone" class="load-more" @click="loadMoreRecords">
 				<text>已加载 {{ pagedRecords.length }} / {{ records.length }} 条，点击加载更多</text>
 			</view>
 			<view v-else-if="pagedRecords.length" class="load-more all-loaded">
@@ -62,8 +63,11 @@ export default {
 			records: [],
 			students: [],
 			// 积分记录前端分页
-			pageSize: 20,
-			visibleCount: 20,
+			recordPage: 1,
+			pageSize: 10,
+			recordDone: false,
+			recordLoading: false,
+			recordSeq: 0,
 			changeForm: { student_id: null, change: '', reason: '' }
 		};
 	},
@@ -72,9 +76,7 @@ export default {
 			const s = this.students.find(x => x.id === this.changeForm.student_id);
 			return s ? s.name : '请选择学生';
 		},
-		pagedRecords() {
-			return this.records.slice(0, this.visibleCount);
-		},
+		pagedRecords() { return this.records; },
 		/* ===== 纯展示：选中学生的当前积分（数据来自排行榜，未选中/不在榜返回 null） ===== */
 		selectedStudentPoints() {
 			if (!this.changeForm.student_id) return null;
@@ -84,20 +86,32 @@ export default {
 	},
 	onLoad() { this.loadAll(); },
 	onReachBottom() {
-		this.loadMoreRecords();
+		if (!this.recordDone) this.loadMoreRecords();
 	},
 	methods: {
 		async loadAll() {
 			try {
 				this.leaderboard = await get('/points/leaderboard');
-				this.records = await get('/points/records');
+				await this.loadRecords(1);
 				this.students = await get('/students');
-				this.visibleCount = this.pageSize;
 			} catch (e) {}
 		},
 		loadMoreRecords() {
-			if (this.visibleCount < this.records.length) {
-				this.visibleCount += this.pageSize;
+			this.loadRecords(this.recordPage + 1);
+		},
+		async loadRecords(page) {
+			if (this.recordLoading) return;
+			this.recordLoading = true;
+			const requestSeq = ++this.recordSeq;
+			try {
+				const rows = await get('/points/records', { page, page_size: this.pageSize });
+				if (requestSeq !== this.recordSeq) return;
+				this.records = rows;
+				this.recordPage = page;
+				this.recordDone = rows.length < this.pageSize;
+			} catch (e) {
+			} finally {
+				if (requestSeq === this.recordSeq) this.recordLoading = false;
 			}
 		},
 		async doChange() {

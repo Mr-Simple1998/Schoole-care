@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -53,11 +53,13 @@ def change_points(data: PointChange, current_user: User = Depends(get_current_us
 
 
 @router.get("/records")
-def list_point_records(student_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_point_records(student_id: int | None = None, page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(PointRecord).filter(PointRecord.org_id == current_user.org_id)
     if student_id:
         q = q.filter(PointRecord.student_id == student_id)
-    recs = q.order_by(PointRecord.created_at.desc()).all()
+    q = q.order_by(PointRecord.created_at.desc(), PointRecord.id.desc())
+    recs = (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
     result = []
     for r in recs:
         st = db.query(Student).filter(Student.id == r.student_id, Student.org_id == current_user.org_id).first()
@@ -78,8 +80,10 @@ class SettingCreate(BaseModel):
 
 
 @router.get("/settings")
-def list_settings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(PointSetting).filter(PointSetting.org_id == current_user.org_id).all()
+def list_settings(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    q = db.query(PointSetting).filter(PointSetting.org_id == current_user.org_id).order_by(PointSetting.id)
+    return (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
 
 
 @router.post("/settings")
@@ -101,8 +105,10 @@ class PrizeCreate(BaseModel):
 
 
 @router.get("/prizes")
-def list_prizes(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(Prize).filter(Prize.is_active == True, Prize.org_id == current_user.org_id).all()  # noqa: E712
+def list_prizes(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    q = db.query(Prize).filter(Prize.is_active == True, Prize.org_id == current_user.org_id).order_by(Prize.id)  # noqa: E712
+    return (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
 
 
 @router.post("/prizes")
@@ -144,8 +150,10 @@ def redeem(data: RedeemCreate, current_user: User = Depends(get_current_user), d
 
 
 @router.get("/redemptions")
-def list_redemptions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    recs = db.query(Redemption).filter(Redemption.org_id == current_user.org_id).order_by(Redemption.created_at.desc()).all()
+def list_redemptions(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    q = db.query(Redemption).filter(Redemption.org_id == current_user.org_id).order_by(Redemption.created_at.desc(), Redemption.id.desc())
+    recs = (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
     result = []
     for r in recs:
         st = db.query(Student).filter(Student.id == r.student_id, Student.org_id == current_user.org_id).first()

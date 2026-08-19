@@ -1,6 +1,6 @@
 from datetime import datetime, date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -176,9 +176,11 @@ def _org_out(o: Organization, db: Session):
 
 
 @router.get("/organizations")
-def list_organizations(current_user: User = Depends(get_current_platform), db: Session = Depends(get_db)):
+def list_organizations(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_platform), db: Session = Depends(get_db)):
     """平台：查看全部机构（校长开户情况），含交费与到期状态 + 机构运营概况（资金/教师/学生）"""
-    orgs = db.query(Organization).order_by(Organization.created_at.desc()).all()
+    q = db.query(Organization).order_by(Organization.created_at.desc(), Organization.id.desc())
+    orgs = (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
     return [_org_out(o, db) for o in orgs]
 
 
@@ -318,12 +320,14 @@ def add_payment(org_id: int, data: RenewData, current_user: User = Depends(get_c
 
 
 @router.get("/organizations/{org_id}/payments")
-def list_org_payments(org_id: int, current_user: User = Depends(get_current_platform), db: Session = Depends(get_db)):
+def list_org_payments(org_id: int, page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_platform), db: Session = Depends(get_db)):
     """平台：某机构的开户流水明细"""
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail="机构不存在")
-    rows = db.query(Payment).filter(Payment.org_id == org_id).order_by(Payment.id.desc()).all()
+    q = db.query(Payment).filter(Payment.org_id == org_id).order_by(Payment.id.desc())
+    rows = (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
     return [{
         "id": p.id,
         "amount": p.amount or 0,
@@ -337,11 +341,13 @@ def list_org_payments(org_id: int, current_user: User = Depends(get_current_plat
 
 
 @router.get("/organizations/{org_id}/principals")
-def list_org_principals(org_id: int, current_user: User = Depends(get_current_platform), db: Session = Depends(get_db)):
+def list_org_principals(org_id: int, page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_platform), db: Session = Depends(get_db)):
     """平台：查看某机构下的校长账号"""
+    q = db.query(User).filter(User.org_id == org_id, User.role == UserRole.PRINCIPAL).order_by(User.id)
+    q = q.offset((page - 1) * page_size).limit(page_size) if page is not None else q
     return [
         {"id": u.id, "username": u.username, "name": u.name, "phone": u.phone, "is_active": u.is_active}
-        for u in db.query(User).filter(User.org_id == org_id, User.role == UserRole.PRINCIPAL).all()
+        for u in q.all()
     ]
 
 

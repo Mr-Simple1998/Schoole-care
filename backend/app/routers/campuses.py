@@ -8,7 +8,7 @@
 """
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -186,19 +186,23 @@ def _campus_item(db: Session, org_id: int, campus: Campus | None, month_start: d
 
 # ---------- 校区下拉（供学生/教师表单选择） ----------
 @router.get("/options")
-def campus_options(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def campus_options(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not current_user.org_id:
         return []
-    rows = db.query(Campus).filter(Campus.org_id == current_user.org_id).order_by(Campus.id).all()
+    q = db.query(Campus).filter(Campus.org_id == current_user.org_id).order_by(Campus.id)
+    rows = (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
     return [{"id": c.id, "name": c.name, "status": bool(c.status)} for c in rows]
 
 
 # ---------- 负责人候选（校长设置校区负责人时的多选项；可包含校长本人，校长也可兼任某校区负责人） ----------
 @router.get("/head-candidates")
-def head_candidates(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def head_candidates(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != UserRole.PRINCIPAL:
         raise HTTPException(status_code=403, detail="仅校长可查看负责人候选")
-    users = db.query(User).filter(User.org_id == current_user.org_id).order_by(User.id).all()
+    q = db.query(User).filter(User.org_id == current_user.org_id).order_by(User.id)
+    users = (q.offset((page - 1) * page_size).limit(page_size).all()
+             if page is not None else q.all())
     campus_map = {c.id: c.name for c in db.query(Campus).filter(Campus.org_id == current_user.org_id).all()}
     return [
         {
@@ -217,7 +221,7 @@ def head_candidates(current_user: User = Depends(get_current_user), db: Session 
 
 # ---------- 校区列表 + 概况 ----------
 @router.get("")
-def list_campuses(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_campuses(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """各校区概况：校长看全部（含未分校区与汇总行），校区负责人/教师只见自己校区"""
     org_id = current_user.org_id
     today = date.today()
@@ -229,11 +233,13 @@ def list_campuses(current_user: User = Depends(get_current_user), db: Session = 
 
     visible = _org_campus_ids(db, current_user)
     if visible is None:
-        campuses = db.query(Campus).filter(Campus.org_id == org_id).order_by(Campus.id).all()
+        q = db.query(Campus).filter(Campus.org_id == org_id).order_by(Campus.id)
     else:
-        campuses = db.query(Campus).filter(
+        q = db.query(Campus).filter(
             Campus.org_id == org_id, Campus.id.in_(visible) if visible else Campus.id.in_([])
-        ).order_by(Campus.id).all()
+        ).order_by(Campus.id)
+    campuses = (q.offset((page - 1) * page_size).limit(page_size).all()
+                if page is not None else q.all())
 
     items = [_campus_item(db, org_id, c, month_start, today) for c in campuses]
 
@@ -637,6 +643,8 @@ def create_transaction(data: TransactionCreate, current_user: User = Depends(get
 
 @router.get("/transactions", response_model=list[TransactionOut])
 def list_transactions(
+    page: int | None = Query(default=None, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
     campus_id: int | None = None,
     kind: str | None = None,
     current_user: User = Depends(get_current_user),
@@ -654,7 +662,9 @@ def list_transactions(
         q = q.filter(CampusTransaction.campus_id == campus_id)
     if kind:
         q = q.filter(CampusTransaction.kind == kind)
-    rows = q.order_by(CampusTransaction.record_date.desc(), CampusTransaction.id.desc()).all()
+    q = q.order_by(CampusTransaction.record_date.desc(), CampusTransaction.id.desc())
+    rows = (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
     campus_map = {c.id: c.name for c in db.query(Campus).filter(Campus.org_id == current_user.org_id).all()}
     user_map = {u.id: u.name for u in db.query(User).filter(User.org_id == current_user.org_id).all()}
     result = []

@@ -2,6 +2,13 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 
+function cleanParams(params) {
+  if (!params || typeof params !== 'object') return params
+  return Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
+  )
+}
+
 // 创建 axios 实例
 const request = axios.create({
   baseURL: '/api',
@@ -11,6 +18,7 @@ const request = axios.create({
 // 请求拦截器：自动带上 token
 request.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
+  if (config.params) config.params = cleanParams(config.params)
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }

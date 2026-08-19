@@ -1,0 +1,3 @@
+# Task 2: Normalize Shared Request Work
+
+Modify `frontend/src/utils/request.js`, `weapp/src/utils/request.js`, `frontend/src/stores/user.js`, and `weapp/src/stores/user.js`. Keep all exported request methods, auth header format, response passthrough, and 401/403/400 handling unchanged. Add a small local `cleanParams` helper that removes only undefined, null, and empty-string query values; preserve false, 0, and non-empty arrays. Read the token once per request and add Authorization only when non-empty. Do not add dependencies or change business/API fields. Run available frontend checks/builds and write `.superpowers/sdd/task-2-report.md`; commit if permitted, otherwise report the ACL blocker.

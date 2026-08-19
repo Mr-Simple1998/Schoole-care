@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -31,9 +31,11 @@ def _subject_out(s):
 
 
 @router.get("")
-def list_subjects(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_subjects(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=10, ge=1, le=100), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """学科列表（按分类优先、排序号排列）"""
-    subs = db.query(Subject).order_by(Subject.category.desc(), Subject.sort, Subject.id).all()
+    q = db.query(Subject).order_by(Subject.category.desc(), Subject.sort, Subject.id)
+    subs = (q.offset((page - 1) * page_size).limit(page_size).all()
+            if page is not None else q.all())
     return [_subject_out(s) for s in subs]
 
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -120,6 +120,8 @@ def _commission_out(rec: CommissionRecord, student_name: str | None = None) -> C
 @router.get("", response_model=list[CommissionOut])
 def list_commissions(
     student_id: int | None = None,
+    page: int | None = Query(default=None, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -134,7 +136,9 @@ def list_commissions(
         if not scoped_ids:
             return []
         q = q.filter(CommissionRecord.student_id.in_(scoped_ids))
-    records = q.order_by(CommissionRecord.created_at.desc(), CommissionRecord.id.desc()).all()
+    q = q.order_by(CommissionRecord.created_at.desc(), CommissionRecord.id.desc())
+    records = (q.offset((page - 1) * page_size).limit(page_size).all()
+               if page is not None else q.all())
 
     name_map = {s.id: s.name for s in db.query(Student).filter(Student.id.in_([r.student_id for r in records])).all()}
     return [_commission_out(r, name_map.get(r.student_id)) for r in records]

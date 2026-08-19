@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -257,6 +257,8 @@ def _next_student_no(db: Session) -> str:
 def list_students(
     subject_id: int | None = None,
     campus_id: int | None = None,
+    page: int | None = Query(default=None, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -277,7 +279,9 @@ def list_students(
         q = q.join(StudentSubject, StudentSubject.student_id == Student.id).filter(
             StudentSubject.subject_id == subject_id
         )
-    students = q.all()
+    q = q.order_by(Student.id)
+    students = (q.offset((page - 1) * page_size).limit(page_size).all()
+                if page is not None else q.all())
     # 批量查询今天已打卡的学生（同一学生当天有任意一条考勤记录即视为已打卡）
     attended_ids = set()
     if students:
