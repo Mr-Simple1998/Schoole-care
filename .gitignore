@@ -32,3 +32,6 @@ weapp/src/project.config.json
 
 # SSH å¯†é’¥ä¸æœ¬åœ°å‡­æ®ï¼ˆç»ä¸æäº¤ï¼‰
 .ssh/
+
+# uni-app ¹¹½¨Éú³ÉµÄ weapp/project.config.json£¨ÎğÌá½»£©
+weapp/project.config.json
