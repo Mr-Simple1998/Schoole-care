@@ -96,3 +96,32 @@ class InstallmentRecord(Base):
     remark = Column(String(255), nullable=True)
 
     installment = relationship("Installment")
+
+
+class CommissionRecord(Base):
+    """老师提成记录：每个学生可记录四类提成角色（招生/体验课/谈单/续费）。
+
+    - 招生老师：首次交费的 5%
+    - 体验课老师：首次交费的 3%
+    - 谈单老师：首次交费的 2%
+    - 续费老师：学生上完课后续费金额的 5%
+    记录由用户手动录入；commission_amount = base_amount * commission_rate（创建时自动计算）。
+    """
+    __tablename__ = "commission_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True, index=True)  # 所属机构
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False, index=True)
+    role = Column(String(20), nullable=False)          # 招生 / 体验课 / 谈单 / 续费
+    teacher_id = Column(Integer, ForeignKey("users.id"), nullable=True)   # 提成老师（可选）
+    teacher_name = Column(String(50), nullable=True)   # 冗余教师姓名（教师离职后仍可显示）
+    base_amount = Column(Float, default=0)             # 计提基数（首次交费金额 / 续费金额）
+    commission_rate = Column(Float, default=0)         # 提成比例（0.05 / 0.03 / 0.02）
+    commission_amount = Column(Float, default=0)       # 提成金额 = base * rate
+    fee_id = Column(Integer, nullable=True)            # 关联收费记录（续费提成可指定某笔续费）
+    remark = Column(String(255), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, nullable=True)
+
+    student = relationship("Student")
+    teacher = relationship("User", foreign_keys=[teacher_id])

@@ -118,6 +118,7 @@ class Student(Base):
     campus = relationship("Campus")
     fee_records = relationship("FeeRecord", back_populates="student")
     invoices = relationship("Invoice", back_populates="student")
+    commission_records = relationship("CommissionRecord", back_populates="student")
     scores = relationship("Score", back_populates="student")
     attendances = relationship("Attendance", back_populates="student")
     homework = relationship("Homework", back_populates="student")

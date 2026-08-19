@@ -21,9 +21,11 @@
     "disableUseStrict": false,
     "condition": false,
     "swc": false,
-    "disableSWC": true
+    "disableSWC": true,
+    "urlCheck": false
   },
   "compileType": "miniprogram",
+  "miniprogramRoot": "weapp/dist/build/mp-weixin/",
   "simulatorPluginLibVersion": {},
   "packOptions": {
     "ignore": [],

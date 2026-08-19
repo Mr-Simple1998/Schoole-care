@@ -9,6 +9,7 @@ from ..models import Student, User, UserRole
 from ..models_learning import Attendance
 from ..models_points import PointRecord
 from ..models_subject import Subject, StudentSubject
+from ..models_income import CommissionRecord, FeeRecord
 from ..security import get_current_user, is_head_role, managed_campus_ids
 
 router = APIRouter()
@@ -150,6 +151,8 @@ class StudentOut(BaseModel):
     subjects: list[SubjectOut] = []
     subject_sessions: list[SubjectSessionOut] = []
     attended_today: bool = False   # 今天是否已打卡（考勤按钮/状态展示用）
+    first_fee_amount: float | None = None   # 第一次交费金额（提成基数参考）
+    commissions: list[dict] = []   # 提成记录（招生/体验课/谈单/续费），见 status 栏展示
 
     class Config:
         from_attributes = True
@@ -160,6 +163,26 @@ def _student_out(student, attended_today: bool = False) -> StudentOut:
     out.attended_today = attended_today
     out.teacher_name = student.teacher.name if student.teacher else None
     out.campus_name = student.campus.name if student.campus else None
+    # 提成记录（招生/体验课/谈单/续费）与首次交费金额（提成基数参考）
+    commissions = []
+    for rec in student.commission_records:
+        commissions.append({
+            "id": rec.id,
+            "role": rec.role,
+            "teacher_id": rec.teacher_id,
+            "teacher_name": rec.teacher_name,
+            "base_amount": rec.base_amount,
+            "commission_rate": rec.commission_rate,
+            "commission_amount": rec.commission_amount,
+            "fee_id": rec.fee_id,
+            "remark": rec.remark,
+            "created_at": rec.created_at.isoformat() if rec.created_at else None,
+        })
+    commissions.sort(key=lambda x: x["id"])
+    out.commissions = commissions
+    # 第一次交费金额（提成基数参考）：按缴费日期最早的收费记录
+    fees = sorted((student.fee_records or []), key=lambda f: (f.pay_date, f.id))
+    out.first_fee_amount = fees[0].amount if fees else None
     # 学科课时信息
     out.subject_sessions = []
     for link in student.subject_links:

@@ -16,7 +16,7 @@ from . import models_points  # noqa: F401
 from . import models_subject  # noqa: F401
 from . import models_campus  # noqa: F401
 
-from .routers import auth, students, income, learning, points, dashboard, subjects, profile, platform, campuses
+from .routers import auth, students, income, learning, points, dashboard, subjects, profile, platform, campuses, commissions
 
 # 创建数据表
 Base.metadata.create_all(bind=engine)
@@ -115,6 +115,7 @@ app.include_router(subjects.router, prefix="/api/subjects", tags=["学科"])
 app.include_router(profile.router, prefix="/api/profile", tags=["个人资料"])
 app.include_router(platform.router, prefix="/api/platform", tags=["平台管理"])
 app.include_router(campuses.router, prefix="/api/campuses", tags=["校区管理"])
+app.include_router(commissions.router, prefix="/api/commissions", tags=["提成"])
 
 
 @app.get("/")

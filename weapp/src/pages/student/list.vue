@@ -68,6 +68,7 @@
 						</view>
 						<view class="ir-right">
 							<text :class="s.status === '在读' ? 'tag tag-success' : 'tag tag-grey'">{{ s.status || '未知' }}</text>
+							<text class="del-link" @click.stop="confirmDelete(s)">删除</text>
 							<!-- 补卡：与打卡共用打卡弹窗，可补打过去任意日期（仅本人负责的学生） -->
 							<button
 								v-if="s.teacher_id === store.user.id"
@@ -136,7 +137,7 @@
 
 <script>
 import { useUserStore } from '../../stores/user';
-import { get, post } from '../../utils/request';
+import { get, post, del } from '../../utils/request';
 
 export default {
 	data() {
@@ -276,6 +277,22 @@ export default {
 				this.showAttend = false;
 				this.loadStudents();
 			} catch (e) {}
+		},
+		// 删除学生：软删除，该生从列表隐藏，但收费/账单/资金记录保留不变
+		confirmDelete(s) {
+			uni.showModal({
+				title: '删除学生',
+				content: `确定删除「${s.name}」吗？删除后该生将从列表隐藏，但其收费/账单/资金记录将保留不变。`,
+				confirmColor: '#f56c6c',
+				success: async (res) => {
+					if (!res.confirm) return;
+					try {
+						await del('/students/' + s.id);
+						uni.showToast({ title: '已删除', icon: 'success' });
+						this.loadStudents();
+					} catch (e) {}
+				}
+			});
 		}
 	}
 };
@@ -401,6 +418,12 @@ export default {
 	display: flex;
 	flex-direction: column;
 	align-items: flex-end;
+}
+.del-link {
+	margin-top: 8rpx;
+	font-size: 22rpx;
+	color: #f56c6c;
+	padding: 4rpx 12rpx;
 }
 .mask {
 	position: fixed; left: 0; top: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.45); z-index: 99;

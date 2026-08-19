@@ -115,11 +115,28 @@
 				</view>
 			</view>
 
-			<!-- 新学员一周未交费提醒（醒目横幅，点击直达收费页；记录收费后自动消失） -->
-			<view v-if="newStudentReminders.length" class="banner is-danger nsb-banner" @click="goIncome">
+			<!-- 新学员一周未交费提醒（点击展开需要交费的学生列表；记录收费后自动消失） -->
+			<view v-if="newStudentReminders.length" class="banner is-danger nsb-banner" @click="showNewFees = !showNewFees">
 				<view>
 					<view class="banner-title">⚠️ {{ newStudentReminders.length }} 名学员入学一周未交费</view>
-					<view class="banner-desc">入学超过 7 天未记录交费 · 点击去收费 · 记录收费后本提醒自动消失</view>
+					<view class="banner-desc">{{ showNewFees ? '点击收起' : '点击查看需要交费的学生 · 记录收费后本提醒自动消失' }}</view>
+				</view>
+				<text class="banner-arrow">{{ showNewFees ? '▲' : '▼' }}</text>
+			</view>
+
+			<!-- 需要交费的学生列表（点击横幅展开） -->
+			<view v-if="showNewFees && newStudentReminders.length" class="card nsb-list">
+				<view class="card-title"><text class="bar"></text>需要交费的学生</view>
+				<view v-for="r in newStudentReminders" :key="r.student_id" class="info-row">
+					<view class="ir-left">
+						<view class="ir-title">{{ r.student_name }}</view>
+						<view class="ir-sub">入学 {{ r.enrollment_date }} · 已过 {{ r.days_since }} 天未交费</view>
+					</view>
+					<view class="ir-right">
+						<text class="tag tag-danger">{{ r.days_since }}天</text>
+						<text v-if="store.isPrincipal || store.isSubPrincipal" class="link" @click.stop="goFeeStudent(r.student_id)">记收费</text>
+						<text v-else class="link" @click.stop="goStudentDetail(r.student_id)">查看 ›</text>
+					</view>
 				</view>
 			</view>
 
@@ -246,7 +263,9 @@ export default {
 			myClock: null,
 			clockLoading: false,
 			clockDate: '',
-			loading: false
+			loading: false,
+			// 一周未交费提醒：是否展开需要交费的学生列表
+			showNewFees: false
 		};
 	},
 	computed: {
@@ -372,6 +391,8 @@ export default {
 			} catch (e) {}
 		},
 		goStudents() { uni.switchTab({ url: '/pages/student/list' }); },
+		goStudentDetail(id) { uni.navigateTo({ url: '/pages/student/detail?id=' + id }); },
+		goFeeStudent(id) { uni.navigateTo({ url: '/pages/income/income?fee_student=' + id }); },
 		goAttendanceCalendar() { uni.navigateTo({ url: '/pages/student/attendance' }); },
 		goIncome() { uni.navigateTo({ url: '/pages/income/income' }); },
 		goSubjects() { uni.navigateTo({ url: '/pages/subjects/subjects' }); },
@@ -506,6 +527,9 @@ export default {
 .cal-entry-sub { font-size: 24rpx; color: #6b7280; }
 .cal-arrow { font-size: 40rpx; color: #10b981; }
 .nsb-banner { margin-bottom: 20rpx; }
+.banner-arrow { margin-left: auto; opacity: 0.6; font-size: 24rpx; flex-shrink: 0; }
+.nsb-list { margin-top: -10rpx; }
+.link { color: #10b981; font-size: 26rpx; margin-left: 12rpx; }
 /* 总欠费卡片上的红色人数 */
 .red-num {
 	color: #ef4444;

@@ -111,7 +111,18 @@
             <span v-else class="empty-inline">0</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="340" fixed="right">
+        <!-- 提成情况（显示在该生状态栏中：招生/体验课/谈单/续费四类） -->
+        <el-table-column label="提成" width="190">
+          <template #default="{ row }">
+            <div v-if="row.commissions && row.commissions.length" class="commission-cell">
+              <el-tag v-for="c in row.commissions" :key="c.id" size="small" :type="commissionTagType(c.role)" style="margin-right: 4px; margin-bottom: 2px">
+                {{ c.role }} ¥{{ c.commission_amount }}
+              </el-tag>
+            </div>
+            <span v-else class="empty-inline">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="420" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="$router.push(`/student/${row.id}`)">学习档案</el-button>
             <!-- 学生分开管理：各角色只能给自己负责的学生打卡（校长/校区负责人/教师均可拥有自己的学生） -->
@@ -122,6 +133,8 @@
               <el-button size="small" type="warning" link class="att-makeup-btn" @click="openAttendance(row, true)">补卡</el-button>
             </template>
             <el-button size="small" link @click="openDialog(row)">编辑</el-button>
+            <el-button v-if="canAssign" size="small" type="warning" link @click="goRenew(row)">续费</el-button>
+            <el-button v-if="canAssign" size="small" type="success" link @click="openCommission(row)">提成</el-button>
             <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -295,18 +308,76 @@
         <el-button type="primary" :loading="attSaving" @click="saveAttendance">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 提成管理弹窗（四类角色：招生5% / 体验课3% / 谈单2% / 续费5%） -->
+    <el-dialog v-model="commissionVisible" :title="`提成管理 - ${commStudent?.name || ''}`" width="640px">
+      <el-table :data="commRecords" size="small" stripe max-height="240">
+        <el-table-column prop="role" label="角色" width="80">
+          <template #default="{ row }"><el-tag size="small" :type="commissionTagType(row.role)">{{ row.role }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="teacher_name" label="提成老师" width="110" />
+        <el-table-column label="计提" width="130">
+          <template #default="{ row }">¥{{ row.base_amount }} × {{ Math.round((row.commission_rate || 0) * 100) }}%</template>
+        </el-table-column>
+        <el-table-column prop="commission_amount" label="提成金额" width="90">
+          <template #default="{ row }"><span class="commission-amount">¥{{ row.commission_amount }}</span></template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注" show-overflow-tooltip />
+        <el-table-column label="操作" width="60">
+          <template #default="{ row }">
+            <el-button size="small" type="danger" link @click="delCommission(row)">删</el-button>
+          </template>
+        </el-table-column>
+        <template #empty><el-empty description="暂无提成记录" :image-size="60" /></template>
+      </el-table>
+
+      <el-divider content-position="left">新增提成</el-divider>
+      <el-form :model="commForm" label-width="90px" size="small">
+        <el-form-item label="提成角色" required>
+          <el-select v-model="commForm.role" style="width: 100%" @change="onCommRoleChange">
+            <el-option v-for="r in COMMISSION_ROLES" :key="r" :label="COMMISSION_LABELS[r]" :value="r" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="提成比例" required>
+          <el-select v-model="commForm.percent" style="width: 100%">
+            <el-option v-for="p in COMMISSION_PERCENTS" :key="p" :label="p + '%'" :value="p" />
+          </el-select>
+          <div class="period-tip">比例可手动选择，不固定于角色</div>
+        </el-form-item>
+        <el-form-item label="提成老师">
+          <el-select v-model="commForm.teacher_id" clearable filterable placeholder="从机构教师中选择" style="width: 100%" @change="onCommTeacherChange">
+            <el-option v-for="t in teacherOptions" :key="t.id" :label="`${t.name}（${t.username}）`" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="老师姓名" v-if="!commForm.teacher_id">
+          <el-input v-model="commForm.teacher_name" placeholder="未选择教师时手动填写姓名" />
+        </el-form-item>
+        <el-form-item label="计提基数" required>
+          <el-input-number v-model="commForm.base_amount" :min="0" :precision="2" style="width: 100%" />
+          <div class="period-tip">提成金额 = ¥{{ commForm.base_amount || 0 }} × {{ commRatePercent }}% = <b>¥{{ commAmountPreview }}</b></div>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="commForm.remark" placeholder="如：首次交费提成 / 续费提成" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="commissionVisible = false">关闭</el-button>
+        <el-button type="primary" @click="saveCommission">保存提成</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
+const router = useRouter()
 const userStore = useUserStore()
 const keyword = ref('')
 const filterSubjectId = ref(null)
@@ -328,6 +399,24 @@ const attSaving = ref(false)
 const attStudent = ref(null)
 const attTitle = ref('考勤打卡')
 const attForm = reactive({ subject_id: null, date: todayStr(), status: '正常', remark: '' })
+
+// ===== 提成管理 =====
+const COMMISSION_ROLES = ['招生', '体验课', '谈单', '续费']
+const COMMISSION_RATES = { 招生: 0.05, 体验课: 0.03, 谈单: 0.02, 续费: 0.05 }
+const COMMISSION_DEFAULT_PERCENT = { 招生: 5, 体验课: 3, 谈单: 2, 续费: 5 }  // 各角色默认比例（可手动改）
+const COMMISSION_PERCENTS = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20]  // 手动选择的比例
+const COMMISSION_LABELS = {
+  招生: '招生老师 · 首次交费（默认5%）',
+  体验课: '体验课老师 · 首次交费（默认3%）',
+  谈单: '谈单老师 · 首次交费（默认2%）',
+  续费: '续费老师 · 续费金额（默认5%）',
+}
+const commissionVisible = ref(false)
+const commStudent = ref(null)
+const commRecords = ref([])
+const commForm = reactive({ role: '招生', teacher_id: null, teacher_name: '', base_amount: 0, percent: 5, remark: '' })
+const commRatePercent = computed(() => commForm.percent || 0)
+const commAmountPreview = computed(() => Math.round((commForm.base_amount || 0) * (commForm.percent || 0) / 100 * 100) / 100)
 
 // 校长/校区负责人可分配负责教师
 const canAssign = computed(() => userStore.isPrincipal || userStore.isSubPrincipal)
@@ -459,6 +548,84 @@ async function loadTeacherOptions(campusId) {
 function onCampusChange() {
   if (canAssign.value) loadTeacherOptions(form.campus_id)
 }
+
+// ===== 提成管理 =====
+function commissionTagType(role) {
+  return { 招生: 'danger', 体验课: 'warning', 谈单: 'primary', 续费: 'success' }[role] || 'info'
+}
+function goRenew(row) {
+  // 续费 = 记一笔新收费（缴费时间段自动推算到期日），记录后可在提成里给续费老师记提成
+  router.push(`/income?fee_student=${row.id}`)
+}
+function resetCommForm() {
+  Object.assign(commForm, { role: '招生', teacher_id: null, teacher_name: '', base_amount: 0, percent: 5, remark: '' })
+  onCommRoleChange()
+}
+async function openCommission(row) {
+  commStudent.value = row
+  commRecords.value = row.commissions || []
+  if (!teacherOptions.value.length) {
+    try {
+      const list = await request.get('/auth/teachers')
+      teacherOptions.value = list.filter((t) => t.is_active && !t.resigned)
+    } catch (e) {
+      teacherOptions.value = []
+    }
+  }
+  resetCommForm()
+  commissionVisible.value = true
+}
+async function onCommRoleChange() {
+  if (!commStudent.value) return
+  // 角色切换时带出该角色的默认比例（可再手动修改）
+  commForm.percent = COMMISSION_DEFAULT_PERCENT[commForm.role] || 5
+  if (commForm.role === '续费') {
+    // 续费基数：该生最近一次交费金额
+    try {
+      const fees = await request.get('/income/fees')
+      const mine = (fees || []).filter((f) => f.student_id === commStudent.value.id)
+      const latest = mine.sort((a, b) => (b.pay_date || '').localeCompare(a.pay_date || '') || b.id - a.id)[0]
+      commForm.base_amount = latest ? latest.amount : 0
+    } catch (e) {
+      commForm.base_amount = 0
+    }
+  } else {
+    // 招生/体验课/谈单：首次交费金额为计提基数
+    commForm.base_amount = commStudent.value.first_fee_amount || 0
+  }
+}
+function onCommTeacherChange(id) {
+  if (id) commForm.teacher_name = ''
+}
+async function saveCommission() {
+  if (!commForm.role) return ElMessage.warning('请选择提成角色')
+  if (!commForm.teacher_id && !commForm.teacher_name) return ElMessage.warning('请选择提成老师或填写姓名')
+  if (!commForm.base_amount) return ElMessage.warning('请填写计提基数')
+  const payload = {
+    student_id: commStudent.value.id,
+    role: commForm.role,
+    teacher_id: commForm.teacher_id,
+    teacher_name: commForm.teacher_name,
+    base_amount: commForm.base_amount,
+    percent: commForm.percent,
+    remark: commForm.remark,
+  }
+  const rec = await request.post('/commissions', payload)
+  ElMessage.success(`已记录${rec.role}提成 ¥${rec.commission_amount}`)
+  await loadStudents()
+  commStudent.value = students.value.find((s) => s.id === commStudent.value.id) || commStudent.value
+  commRecords.value = commStudent.value.commissions || []
+  resetCommForm()
+}
+async function delCommission(row) {
+  await ElMessageBox.confirm(`确定删除「${row.role}」提成 ¥${row.commission_amount} 吗？`, '提示', { type: 'warning' })
+  await request.delete(`/commissions/${row.id}`)
+  ElMessage.success('已删除')
+  await loadStudents()
+  commStudent.value = students.value.find((s) => s.id === commStudent.value.id) || commStudent.value
+  commRecords.value = commStudent.value.commissions || []
+}
+
 
 function onSelectionChange(rows) {
   selectedRows.value = rows
@@ -761,5 +928,15 @@ onMounted(() => {
 }
 .att-makeup-btn {
   margin-left: 2px;
+}
+.commission-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.commission-amount {
+  color: var(--danger);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 </style>

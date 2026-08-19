@@ -88,6 +88,113 @@
 			</view>
 		</view>
 
+		<!-- 收费情况（资金信息：欠费 / 未交费提醒 / 收费记录） -->
+		<view v-if="studentOverdue.length" class="banner is-danger">
+			<view>
+				<view class="banner-title">⚠️ 该学生欠费 ¥{{ totalUnpaid }}</view>
+				<view class="banner-desc">{{ studentOverdue.length }} 笔待缴，请及时联系家长缴费</view>
+			</view>
+		</view>
+		<view v-if="noFeeReminder" class="banner is-warn">
+			<view>
+				<view class="banner-title">⚠️ 入学 {{ daysSinceEnroll }} 天未交费</view>
+				<view class="banner-desc">该学生暂无收费记录，请提醒家长尽快交费</view>
+			</view>
+		</view>
+		<view class="card" v-if="studentFees.length || studentOverdue.length || noFeeReminder">
+			<view class="card-title">
+				<text class="bar"></text>收费情况
+				<text v-if="canAssign" class="fee-renew" @click="goRenew">续费 ›</text>
+			</view>
+			<!-- 欠费明细 -->
+			<view v-for="o in studentOverdue" :key="o.invoice_id || o.id" class="info-row">
+				<view class="ir-left">
+					<view class="ir-title">{{ o.item }}</view>
+					<view class="ir-sub">应缴 ¥{{ o.amount }}<text class="text-muted"> · {{ o.due_date || '未设应缴日' }}</text></view>
+				</view>
+				<view class="ir-right">
+					<text class="tag" :class="o.status === '部分缴纳' ? 'tag-warn' : 'tag-danger'">{{ o.status }}</text>
+					<text class="amount">欠 ¥{{ o.unpaid }}</text>
+				</view>
+			</view>
+			<!-- 收费记录 -->
+			<view v-for="f in studentFees" :key="f.id" class="info-row">
+				<view class="ir-left">
+					<view class="ir-title">{{ f.fee_type }} · ¥{{ f.amount }}</view>
+					<view class="ir-sub">
+						<text>{{ f.pay_date }} · {{ f.payment_period || '单次' }} · {{ f.payment_method }}</text>
+						<text v-if="f.remaining_sessions !== null && f.remaining_sessions !== undefined"> · 剩 {{ f.remaining_sessions }} 次</text>
+					</view>
+				</view>
+				<view class="ir-right">
+					<text v-if="f.expire_date" :class="'tag ' + feeExpireTag(f.expire_date)">{{ feeExpireText(f.expire_date) }}</text>
+				</view>
+			</view>
+			<view v-if="!studentFees.length && !studentOverdue.length" class="empty">该学生暂无收费记录</view>
+		</view>
+
+		<!-- 提成情况（招生/体验课/谈单/续费，显示在该生状态栏中） -->
+		<view class="card" v-if="student.commissions && student.commissions.length">
+			<view class="card-title">
+				<text class="bar"></text>提成情况
+				<text v-if="canAssign" class="fee-renew" @click="openCommission">管理 ›</text>
+			</view>
+			<view v-for="c in student.commissions" :key="c.id" class="info-row">
+				<view class="ir-left">
+					<view class="ir-title">
+						<text class="tag" :class="commTagClass(c.role)">{{ c.role }}</text>
+						<text class="comm-teacher">{{ c.teacher_name || '未填教师' }}</text>
+					</view>
+					<view class="ir-sub">¥{{ c.base_amount }} × {{ commRatePct(c) }}%<text v-if="c.remark" class="text-muted"> · {{ c.remark }}</text></view>
+				</view>
+				<view class="ir-right">
+					<text class="amount">¥{{ c.commission_amount }}</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 提成管理弹窗 -->
+		<view class="mask" v-if="showComm" @click="showComm=false">
+			<view class="dialog" @click.stop>
+				<view class="dialog-title">提成管理（比例手动选择）</view>
+				<view class="field">
+					<text class="label">提成角色</text>
+					<picker :range="commRoleLabels" @change="e => { commForm.role = commRoleList[e.detail.value]; onCommRoleChange(); }">
+						<view class="input">{{ commRoleLabel }}</view>
+					</picker>
+				</view>
+				<view class="field">
+					<text class="label">提成比例（%）</text>
+					<picker :range="commPercentLabels" @change="e => onCommPercentChange(e.detail.value)">
+						<view class="input">{{ commForm.percent }}%（点击选择，不固定）</view>
+					</picker>
+				</view>
+				<view class="field">
+					<text class="label">提成老师</text>
+					<picker :range="commTeacherOptions" @change="e => onCommTeacherChange(e.detail.value)">
+						<view class="input">{{ commTeacherLabel }}</view>
+					</picker>
+					<input v-if="!commForm.teacher_id" class="input comm-name" v-model="commForm.teacher_name" placeholder="未选择时手动填写教师姓名" />
+				</view>
+				<view class="field">
+					<text class="label">计提基数（¥）</text>
+					<input class="input" type="digit" v-model="commForm.base_amount" placeholder="提成金额 = 基数 × 比例" />
+				</view>
+				<view class="field" v-if="commAmountPreview > 0">
+					<text class="label">提成金额</text>
+					<text class="comm-preview">¥{{ commAmountPreview }}（{{ commForm.percent }}% × ¥{{ commForm.base_amount }}）</text>
+				</view>
+				<view class="field">
+					<text class="label">备注</text>
+					<input class="input" v-model="commForm.remark" placeholder="如：首次交费提成" />
+				</view>
+				<view class="dialog-btns">
+					<button class="btn-cancel" @click="showComm=false">取消</button>
+					<button class="btn-primary" @click="saveCommission">保存提成</button>
+				</view>
+			</view>
+		</view>
+
 		<!-- 功能入口 -->
 		<view class="card">
 			<view class="card-title"><text class="bar"></text>功能</view>
@@ -100,6 +207,8 @@
 				<view class="quick-item" @click="openScore"><text>成绩</text></view>
 				<view class="quick-item" @click="openHomework"><text>作业</text></view>
 				<view class="quick-item" @click="togglePerf"><text>课堂表现</text></view>
+				<!-- 提成分配：校长/校区负责人可在每个学生档案中分配提成（无记录也能进入） -->
+				<view class="quick-item is-comm" v-if="canAssign" @click="openCommission"><text>💰 提成</text></view>
 			</view>
 		</view>
 
@@ -226,10 +335,21 @@
 </template>
 
 <script>
-import { get, post, put } from '../../utils/request';
+import { get, post, put, del } from '../../utils/request';
 import { useUserStore } from '../../stores/user';
 
 const PERF_TYPES = ['纪律','专注','积极','作业','礼仪'];
+
+// 提成：四类角色（分类标签）+ 手动选择比例（不固定）
+const COMMISSION_ROLES = ['招生', '体验课', '谈单', '续费'];
+const COMMISSION_DEFAULT_PERCENT = { 招生: 5, 体验课: 3, 谈单: 2, 续费: 5 };
+const COMMISSION_PERCENTS = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20];
+const COMMISSION_LABELS = {
+	招生: '招生老师 · 首次交费（默认5%）',
+	体验课: '体验课老师 · 首次交费（默认3%）',
+	谈单: '谈单老师 · 首次交费（默认2%）',
+	续费: '续费老师 · 续费金额（默认5%）'
+};
 
 export default {
 	data() {
@@ -240,13 +360,19 @@ export default {
 			scores: [],
 			hwList: [],
 			teachers: [],
+			fees: [],
+			overdue: [],
 			loading: false,
 			showTeacherPick: false,
 			selectedTeacherId: null,
 			showAttend: false, attendTitle: '考勤打卡', attendSubjects: [], attendSubjectId: null, attendDate: '',
 			showScore: false, scoreForm: { subject: '', score: '', exam_type: '平时考' },
 			showHw: false, hwForm: { subject: '', content: '' },
-			showPerf: false, perfTypes: PERF_TYPES, perfForm: { performance_type: '纪律', rating: 3, comment: '' }
+			showPerf: false, perfTypes: PERF_TYPES, perfForm: { performance_type: '纪律', rating: 3, comment: '' },
+			showComm: false, commForm: { role: '招生', teacher_id: null, teacher_name: '', base_amount: 0, percent: 5, remark: '' },
+			// 提成常量挂到实例上（uni-app mp-weixin 模板不能直接引用模块级常量，会编译成错误的作用域访问）
+			commRoleList: COMMISSION_ROLES,
+			commPercentList: COMMISSION_PERCENTS
 		};
 	},
 	computed: {
@@ -299,6 +425,57 @@ export default {
 				return { type: 'is-warn', title: soon.name + ' 课时即将到期', desc: '还剩 ' + soon.days + ' 天到期，请关注续费' };
 			}
 			return null;
+		},
+		/* 纯展示：收费情况（资金信息） */
+		studentFees() {
+			return this.fees || [];
+		},
+		studentOverdue() {
+			return this.overdue || [];
+		},
+		totalUnpaid() {
+			return this.round2(this.studentOverdue.reduce((s, o) => s + Number(o.unpaid || 0), 0));
+		},
+		// 入学至今的天数（无入学日期返回 null）
+		daysSinceEnroll() {
+			if (!this.student || !this.student.enrollment_date) return null;
+			const today = new Date(); today.setHours(0, 0, 0, 0);
+			const en = new Date(this.student.enrollment_date); en.setHours(0, 0, 0, 0);
+			return Math.round((today - en) / 86400000);
+		},
+		// 入学超过 7 天且没有任何收费记录 → 未交费提醒（资金信息展示）
+		noFeeReminder() {
+			return !!this.student &&
+				this.studentFees.length === 0 &&
+				this.student.status === '在读' &&
+				this.daysSinceEnroll !== null &&
+				this.daysSinceEnroll > 7;
+		},
+		/* 提成弹窗：角色/老师/比例/金额预览 */
+		commRoleLabels() {
+			return COMMISSION_ROLES.map(r => COMMISSION_LABELS[r] || r);
+		},
+		commRoleLabel() {
+			return COMMISSION_LABELS[this.commForm.role] || this.commForm.role;
+		},
+		commPercentLabels() {
+			return (this.commPercentList || []).map(p => p + '%');
+		},
+		commTeacherOptions() {
+			return this.teachers.map(t => `${t.name}（${t.username}）${this.teacherRoleTag(t)}`);
+		},
+		commTeacherIds() {
+			return this.teachers.map(t => t.id);
+		},
+		commTeacherLabel() {
+			if (this.commForm.teacher_id) {
+				const t = this.teachers.find(x => x.id === this.commForm.teacher_id);
+				return t ? `${t.name}（${t.username}）` : '';
+			}
+			return this.commForm.teacher_name || '请选择提成老师';
+		},
+		commAmountPreview() {
+			return this.round2((Number(this.commForm.base_amount) || 0) * (Number(this.commForm.percent) || 0) / 100);
 		}
 	},
 	onLoad(options) {
@@ -310,11 +487,13 @@ export default {
 		async loadAll() {
 			this.loading = true;
 			try {
-				// 并行拉取：学生档案 / 成绩 / 作业 同时请求，缩短首屏等待
-				const [student, scores, hw] = await Promise.all([
+				// 并行拉取：学生档案 / 成绩 / 作业 / 收费流水 / 欠费账单 同时请求，缩短首屏等待
+				const [student, scores, hw, fees, overdue] = await Promise.all([
 					get('/students/' + this.id),
 					get('/learning/scores', { student_id: this.id }),
-					get('/learning/homework', { student_id: this.id })
+					get('/learning/homework', { student_id: this.id }),
+					get('/income/fees'),
+					get('/income/overdue')
 				]);
 				this.student = student;
 				// 打卡学科：优先用课时会话（subject_sessions：subject_id/subject_name/remaining），否则退回学科列表（subjects：id/name）
@@ -329,6 +508,9 @@ export default {
 				if (this.attendSubjects.length) this.attendSubjectId = this.attendSubjects[0].id;
 				this.scores = scores || [];
 				this.hwList = hw || [];
+				// 收费/欠费：接口已按角色限定数据范围，这里只保留当前学生的记录
+				this.fees = (fees || []).filter(f => f.student_id === Number(this.id));
+				this.overdue = (overdue || []).filter(o => o.student_id === Number(this.id));
 				if (this.canAssign) {
 					try {
 						this.teachers = await get('/auth/teachers');
@@ -375,6 +557,22 @@ export default {
 			const today = new Date(); today.setHours(0,0,0,0);
 			const exp = new Date(d); exp.setHours(0,0,0,0);
 			return Math.round((exp - today) / 86400000);
+		},
+		round2(n) {
+			return Math.round(Number(n) * 100) / 100;
+		},
+		/* 纯展示：收费到期标签 */
+		feeExpireTag(d) {
+			const days = this.daysLeft(d);
+			if (days < 0) return 'tag-danger';
+			if (days <= 5) return 'tag-warn';
+			return 'tag-success';
+		},
+		feeExpireText(d) {
+			const days = this.daysLeft(d);
+			if (days < 0) return '已到期 ' + (-days) + ' 天';
+			if (days === 0) return '今天到期';
+			return '剩 ' + days + ' 天';
 		},
 		/* 纯展示：课时进度条 */
 		progressWidth(ss) {
@@ -449,6 +647,80 @@ export default {
 			this.showPerf = false;
 			this.perfForm = { performance_type: '纪律', rating: 3, comment: '' };
 			uni.showToast({ title: '已记录', icon: 'success' });
+		},
+		/* ===== 提成：角色分类 + 比例手动选择（不固定） ===== */
+		commTagClass(role) {
+			return { 招生: 'tag-danger', 体验课: 'tag-warn', 谈单: 'tag-info', 续费: 'tag-success' }[role] || 'tag-grey';
+		},
+		commRatePct(c) {
+			return Math.round((Number(c.commission_rate) || 0) * 100);
+		},
+		// 续费 = 记一笔新收费（缴费时间段自动推算到期日），记完后可在提成里给续费老师记提成
+		goRenew() {
+			uni.navigateTo({ url: '/pages/income/income?fee_student=' + this.id });
+		},
+		openCommission() {
+			this.commForm = { role: '招生', teacher_id: null, teacher_name: '', base_amount: 0, percent: 5, remark: '' };
+			this.onCommRoleChange();
+			this.showComm = true;
+		},
+		async onCommRoleChange() {
+			// 角色切换时带出默认比例（可再手动改）
+			this.commForm.percent = COMMISSION_DEFAULT_PERCENT[this.commForm.role] || 5;
+			if (this.commForm.role === '续费') {
+				// 续费基数：该生最近一次交费金额
+				const mine = (this.studentFees || []).slice().sort((a, b) => (b.pay_date || '').localeCompare(a.pay_date || '') || b.id - a.id);
+				this.commForm.base_amount = mine.length ? mine[0].amount : 0;
+			} else {
+				// 招生/体验课/谈单：首次交费金额为计提基数
+				this.commForm.base_amount = (this.student && this.student.first_fee_amount) || 0;
+			}
+		},
+		onCommTeacherChange(idx) {
+			this.commForm.teacher_id = this.commTeacherIds[idx];
+			this.commForm.teacher_name = '';
+		},
+		onCommPercentChange(idx) {
+			this.commForm.percent = COMMISSION_PERCENTS[idx];
+		},
+		async saveCommission() {
+			try {
+				const payload = {
+					student_id: Number(this.id),
+					role: this.commForm.role,
+					teacher_id: this.commForm.teacher_id,
+					teacher_name: this.commForm.teacher_name,
+					base_amount: Number(this.commForm.base_amount) || 0,
+					percent: Number(this.commForm.percent) || 0,
+					remark: this.commForm.remark
+				};
+				if (!payload.teacher_id && !payload.teacher_name) {
+					uni.showToast({ title: '请选择提成老师或填姓名', icon: 'none' });
+					return;
+				}
+				if (!payload.base_amount) {
+					uni.showToast({ title: '请填写计提基数', icon: 'none' });
+					return;
+				}
+				const rec = await post('/commissions', payload);
+				uni.showToast({ title: `已记录${rec.role}提成 ¥${rec.commission_amount}`, icon: 'success' });
+				this.showComm = false;
+				this.loadAll();
+			} catch (e) {}
+		},
+		async delCommission(row) {
+			uni.showModal({
+				title: '提示',
+				content: `确定删除「${row.role}」提成 ¥${row.commission_amount} 吗？`,
+				success: async (res) => {
+					if (!res.confirm) return;
+					try {
+						await del('/commissions/' + row.id);
+						uni.showToast({ title: '已删除', icon: 'success' });
+						this.loadAll();
+					} catch (e) {}
+				}
+			});
 		}
 	}
 };
@@ -503,6 +775,7 @@ export default {
 .quick-item:nth-child(2n) { margin-right: 0; }
 .quick-item.is-done { background: #f3f4f6; color: #9ca3af; }
 .quick-item.is-makeup { background: #fff7e6; color: #e6a23c; }
+.quick-item.is-comm { background: #fef2f2; color: #dc2626; }
 .record-item {
 	display: flex; align-items: center; padding: 16rpx 0; border-bottom: 1rpx solid #f5f5f5; font-size: 26rpx;
 }
@@ -524,4 +797,9 @@ export default {
 .field { margin-bottom: 20rpx; }
 .label { display: block; font-size: 24rpx; color: #606266; margin-bottom: 8rpx; }
 .input { background: #f5f7fa; border-radius: 10rpx; padding: 16rpx 20rpx; font-size: 28rpx; }
+/* 收费/提成卡片上的续费、管理按钮 */
+.fee-renew { margin-left: auto; color: #10b981; font-size: 26rpx; font-weight: 400; }
+.comm-teacher { margin-left: 12rpx; font-weight: 500; color: #303133; }
+.comm-preview { color: #f56c6c; font-weight: 600; font-size: 28rpx; }
+.comm-name { margin-top: 12rpx; }
 </style>

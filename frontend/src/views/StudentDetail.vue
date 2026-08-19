@@ -54,6 +54,24 @@
       </div>
     </div>
 
+    <!-- 提成情况（招生/体验课/谈单/续费，显示在该生状态栏中） -->
+    <el-card shadow="never" style="margin-bottom:16px" v-if="student.commissions && student.commissions.length">
+      <template #header>
+        <span class="card-title">💰 提成情况
+          <small style="color:#909399;font-weight:400;margin-left:8px">招生5% / 体验课3% / 谈单2% / 续费5%（首次交费或续费金额计提）</small>
+        </span>
+      </template>
+      <div class="commission-grid">
+        <div v-for="c in student.commissions" :key="c.id" class="commission-item">
+          <el-tag size="small" :type="commissionTagType(c.role)">{{ c.role }}</el-tag>
+          <span class="ci-teacher">{{ c.teacher_name || '未填教师' }}</span>
+          <span class="ci-base">¥{{ c.base_amount }} × {{ Math.round((c.commission_rate || 0) * 100) }}%</span>
+          <b class="ci-amount">¥{{ c.commission_amount }}</b>
+          <span v-if="c.remark" class="ci-remark">{{ c.remark }}</span>
+        </div>
+      </div>
+    </el-card>
+
     <el-tabs v-model="activeTab" type="border-card">
       <!-- 成绩 -->
       <el-tab-pane label="学习成绩" name="scores">
@@ -325,6 +343,9 @@ function hwType(s) {
 // ===== 纯展示：概览统计与成绩配色（不改变任何业务逻辑） =====
 // 是否可给该学生打卡：校长/校区负责人/教师的学生分开，只能给自己负责的学生打卡
 const canCheckIn = computed(() => student.value.teacher_id === userStore.user?.id)
+function commissionTagType(role) {
+  return { 招生: 'danger', 体验课: 'warning', 谈单: 'primary', 续费: 'success' }[role] || 'info'
+}
 const totalRemaining = computed(() =>
   (student.value.subject_sessions || []).reduce((a, s) => a + (s.remaining ?? 0), 0)
 )
@@ -636,4 +657,23 @@ onBeforeUnmount(() => {
   font-size: 12px;
   padding: 4px 0;
 }
+.commission-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.commission-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fafafa;
+  font-size: 13px;
+}
+.ci-teacher { color: #303133; font-weight: 500; }
+.ci-base { color: #909399; }
+.ci-amount { color: #f56c6c; font-variant-numeric: tabular-nums; }
+.ci-remark { color: #909399; font-size: 12px; }
 </style>

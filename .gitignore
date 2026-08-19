@@ -27,5 +27,8 @@ dist-ssr/
 # 微信开发者工具私人配置（本地设置，勿提交）
 project.private.config.json
 
+# uni-app 编译生成的小程序工程配置（由根目录 project.config.json 生成，勿提交）
+weapp/src/project.config.json
+
 # SSH 密钥与本地凭据（绝不提交）
 .ssh/
