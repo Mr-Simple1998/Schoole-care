@@ -10,25 +10,25 @@
 
       <!-- 统计概览 -->
       <el-row :gutter="16" class="stat-row stat-card-animated">
-        <el-col :span="6">
+        <el-col :span="6" :xs="12">
           <el-card shadow="always" class="stat-card">
             <div class="stat-num">{{ organizations.length }}</div>
             <div class="stat-label">机构总数</div>
           </el-card>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="6" :xs="12">
           <el-card shadow="always" class="stat-card">
             <div class="stat-num">{{ totalPaid }}</div>
             <div class="stat-label">累计交费(元)</div>
           </el-card>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="6" :xs="12">
           <el-card shadow="always" class="stat-card">
             <div class="stat-num highlight-warn">{{ expiringCount }}</div>
             <div class="stat-label">即将到期</div>
           </el-card>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="6" :xs="12">
           <el-card shadow="always" class="stat-card">
             <div class="stat-num highlight-danger">{{ expiredCount }}</div>
             <div class="stat-label">已到期</div>
@@ -38,25 +38,25 @@
 
       <!-- 全机构运营总览（资金/教师/学生） -->
       <el-row :gutter="16" class="stat-row stat-card-animated">
-        <el-col :span="6">
+        <el-col :span="6" :xs="12">
           <el-card shadow="always" class="stat-card">
             <div class="stat-num">{{ platOverview.student_count ?? 0 }}</div>
             <div class="stat-label">学生总数（在读 {{ platOverview.active_student_count ?? 0 }}）</div>
           </el-card>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="6" :xs="12">
           <el-card shadow="always" class="stat-card">
             <div class="stat-num">{{ platOverview.teacher_count ?? 0 }}</div>
             <div class="stat-label">教师总数</div>
           </el-card>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="6" :xs="12">
           <el-card shadow="always" class="stat-card">
             <div class="stat-num">{{ platOverview.month_income ?? 0 }}</div>
             <div class="stat-label">本月收入(元)</div>
           </el-card>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="6" :xs="12">
           <el-card shadow="always" class="stat-card">
             <div class="stat-num highlight-danger">{{ platOverview.unpaid ?? 0 }}</div>
             <div class="stat-label">待缴金额(元)</div>
@@ -140,19 +140,19 @@
       <el-tabs v-model="statTab">
         <el-tab-pane label="总交费金额" name="total">
           <el-row :gutter="16" class="stat-card-animated">
-            <el-col :span="8">
+            <el-col :span="8" :xs="24">
               <el-card shadow="always" class="stat-card">
                 <div class="stat-num">{{ stat.total_amount }}</div>
                 <div class="stat-label">全部机构累计交费(元)</div>
               </el-card>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="8" :xs="24">
               <el-card shadow="always" class="stat-card">
                 <div class="stat-num">{{ stat.org_count }}</div>
                 <div class="stat-label">开户机构数</div>
               </el-card>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="8" :xs="24">
               <el-card shadow="always" class="stat-card">
                 <div class="stat-num highlight-danger">{{ stat.due_list?.length ?? 0 }}</div>
                 <div class="stat-label">待收款/已到期机构</div>

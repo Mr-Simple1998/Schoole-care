@@ -2,7 +2,7 @@
   <div class="page-container">
     <el-row :gutter="16">
       <!-- 排行榜 -->
-      <el-col :span="9">
+      <el-col :span="9" :xs="24">
         <el-card shadow="never">
           <template #header><span>积分排行榜</span></template>
           <div v-if="leaderboard.length === 0" class="empty-hint">暂无学生数据</div>
@@ -24,7 +24,7 @@
       </el-col>
 
       <!-- 积分操作与奖品 -->
-      <el-col :span="15">
+      <el-col :span="15" :xs="24">
         <el-card shadow="never" style="margin-bottom:16px">
           <template #header><span>积分加扣</span></template>
           <!-- 学生积分概览（纯展示，基于 students 计算） -->

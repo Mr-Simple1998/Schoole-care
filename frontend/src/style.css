@@ -532,3 +532,133 @@ a {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 14px;
 }
+
+/* ================================================================
+   移动端适配（≤767px，手机浏览器访问）
+   ================================================================ */
+@media (max-width: 767px) {
+  .page-container {
+    padding: 12px;
+  }
+
+  /* 弹窗 / 消息框：接近全屏，便于触控操作 */
+  .el-dialog {
+    width: calc(100vw - 24px) !important;
+    --el-dialog-margin-top: 6vh;
+    margin-top: 6vh !important;
+  }
+  .el-dialog__header {
+    padding: 16px 16px 0 !important;
+  }
+  .el-dialog__body {
+    padding: 16px !important;
+  }
+  .el-dialog__footer {
+    padding: 0 16px 16px !important;
+  }
+  .el-message-box {
+    max-width: calc(100vw - 24px) !important;
+  }
+
+  /* 表单：标签在上、输入框在下，避免横向拥挤 */
+  .el-form-item {
+    flex-wrap: wrap;
+  }
+  .el-form-item__label {
+    width: 100% !important;
+    justify-content: flex-start;
+    padding-bottom: 4px;
+    line-height: 1.4;
+  }
+
+  /* 统计卡 / 迷你指标：紧凑化、两列布局 */
+  .stat-card {
+    padding: 14px;
+    gap: 12px;
+  }
+  .stat-card .stat-icon {
+    width: 42px;
+    height: 42px;
+    font-size: 20px;
+  }
+  .stat-card .stat-value {
+    font-size: 22px;
+  }
+  .stat-card .stat-label {
+    font-size: 12px;
+  }
+  .mini-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* 卡片头部紧凑 */
+  .el-card__header {
+    padding: 12px 14px !important;
+  }
+
+  /* 卡片标题行（标题 + 操作按钮）允许换行 */
+  .card-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  /* 筛选工具栏：允许换行，筛选控件占满整行，避免横向溢出 */
+  .toolbar {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .toolbar-left,
+  .toolbar-right {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .toolbar .el-input,
+  .toolbar .el-select {
+    width: 100% !important;
+  }
+
+  /* 学生档案页：信息头与操作按钮允许换行 */
+  .student-header {
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+  .student-meta {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .tab-toolbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  /* 校区卡片：头部标签与操作按钮允许换行 */
+  .cc-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .cc-actions {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .txn-filters {
+    flex-wrap: wrap;
+  }
+
+  /* 分页：居中、允许换行 */
+  .el-pagination {
+    justify-content: center;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  /* 表格：横向滚动（el-table 自带），触屏惯性滚动 */
+  .el-table {
+    font-size: 12px;
+  }
+  .cal-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+}

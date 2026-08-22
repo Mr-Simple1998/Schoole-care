@@ -15,7 +15,7 @@
 
     <!-- 统计卡片 -->
     <el-row :gutter="16">
-      <el-col :span="(userStore.isPrincipal || userStore.isSubPrincipal) ? 6 : 12" v-for="card in statCards" :key="card.label">
+      <el-col :span="(userStore.isPrincipal || userStore.isSubPrincipal) ? 6 : 12" :xs="12" v-for="card in statCards" :key="card.label">
         <div class="stat-card" :style="{ animationDelay: card.delay + 'ms' }">
           <div class="stat-icon" :style="{ background: card.color }">
             <el-icon :size="24"><component :is="card.icon" /></el-icon>
@@ -192,13 +192,13 @@
 
     <!-- 图表区（收入趋势仅校长/校区负责人可见本校区收入） -->
     <el-row v-if="userStore.isPrincipal || userStore.isSubPrincipal" :gutter="16" class="mt-16">
-      <el-col :span="16">
+      <el-col :span="16" :xs="24">
         <el-card shadow="never">
           <div class="card-title">近14天收入趋势</div>
           <div ref="incomeChartRef" class="chart-box"></div>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="8" :xs="24">
         <el-card shadow="never">
           <div class="card-title">学科 / 非学科人数</div>
           <div ref="catChartRef" class="chart-box"></div>
@@ -208,13 +208,13 @@
 
     <!-- 学科分布 / 快捷入口 -->
     <el-row :gutter="16" class="mt-16">
-      <el-col :span="16">
+      <el-col :span="16" :xs="24">
         <el-card shadow="never">
           <div class="card-title">学科学生分布</div>
           <div ref="subjectChartRef" class="chart-box"></div>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="8" :xs="24">
         <el-card shadow="never">
           <div class="card-title">功能快捷入口</div>
           <div class="quick-links">
@@ -231,7 +231,7 @@
 
     <!-- 教师：学科/非学科人数 -->
     <el-row v-if="userStore.isTeacher" :gutter="16" class="mt-16">
-      <el-col :span="12">
+      <el-col :span="12" :xs="24">
         <el-card shadow="never">
           <div class="card-title">学科 / 非学科人数</div>
           <div ref="catChartRef" class="chart-box"></div>
@@ -834,6 +834,19 @@ onBeforeUnmount(() => {
 .cal-cell { padding: 4px 2px; }
 .cal-cell .cal-dot { display: block; margin: 0 auto; }
 .att-pager { display: flex; justify-content: flex-end; margin-top: 12px; }
+/* 移动端：打卡操作区改为纵向堆叠 */
+@media (max-width: 767px) {
+  .clock-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .clock-btns {
+    flex-wrap: wrap;
+  }
+  .chart-box {
+    height: 240px;
+  }
+}
 /* transitions */
 .slide-down-enter-active { transition: all 0.4s ease-out; }
 .slide-down-leave-active { transition: all 0.3s ease-in; }

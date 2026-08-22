@@ -3,7 +3,7 @@
 		<!-- 品牌区（纯展示） -->
 		<view class="brand">
 			<view class="brand-logo">📚</view>
-			<view class="logo-title">机构后台管理</view>
+			<view class="logo-title">清禾家塾管理系统</view>
 			<view class="logo-sub">微信授权 · 账号绑定登录</view>
 		</view>
 

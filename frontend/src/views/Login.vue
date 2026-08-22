@@ -12,7 +12,7 @@
         <div class="login-icon">
           <el-icon :size="36"><Reading /></el-icon>
         </div>
-        <h2>托管学堂</h2>
+        <h2>清禾家塾管理系统</h2>
         <p class="login-subtitle">教学机构后台管理系统</p>
         <span class="login-badge">ADMIN CONSOLE</span>
       </div>
@@ -44,7 +44,7 @@
         <span>如需开通机构账号，请联系平台管理员</span>
       </div>
 
-      <div class="login-footer">© {{ currentYear }} 托管学堂 · 教务管理系统</div>
+      <div class="login-footer">© {{ currentYear }} 清禾家塾管理系统</div>
     </div>
   </div>
 </template>
@@ -307,5 +307,19 @@ async function handleLogin() {
   color: var(--text-muted);
   font-size: 12px;
   letter-spacing: 0.5px;
+}
+
+/* 移动端：登录卡片自适应屏幕宽度 */
+@media (max-width: 480px) {
+  .login-card {
+    width: calc(100vw - 32px);
+    padding: 32px 20px 24px;
+  }
+  .login-container {
+    padding: 12px;
+  }
+  .login-header h2 {
+    font-size: 22px;
+  }
 }
 </style>

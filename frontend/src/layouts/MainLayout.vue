@@ -1,65 +1,40 @@
 <template>
   <el-container class="layout">
-    <!-- 侧边栏 -->
-    <el-aside :width="isCollapse ? '68px' : '230px'" class="aside">
+    <!-- 侧边栏（桌面端） -->
+    <el-aside v-if="!isMobile" :width="isCollapse ? '68px' : '230px'" class="aside">
       <div class="logo">
         <div class="logo-icon">
           <el-icon :size="22"><Reading /></el-icon>
         </div>
-        <span v-show="!isCollapse" class="logo-text">托管学堂</span>
+        <span v-show="!isCollapse" class="logo-text">清禾家塾管理系统</span>
       </div>
-      <el-menu
-        :default-active="activeMenu"
-        :collapse="isCollapse"
-        router
-        class="menu"
-        :collapse-transition="false"
-      >
-        <template v-if="userStore.isPlatform">
-          <el-menu-item index="/platform">
-            <el-icon><OfficeBuilding /></el-icon>
-            <span>机构开户管理</span>
-          </el-menu-item>
-        </template>
-        <template v-else>
-          <el-menu-item index="/dashboard">
-            <el-icon><Odometer /></el-icon>
-            <span>工作台</span>
-          </el-menu-item>
-          <el-menu-item index="/students">
-            <el-icon><User /></el-icon>
-            <span>学生管理</span>
-          </el-menu-item>
-          <el-menu-item v-if="userStore.isPrincipal || userStore.isSubPrincipal" index="/income">
-            <el-icon><Money /></el-icon>
-            <span>收费管理</span>
-          </el-menu-item>
-          <el-menu-item v-if="userStore.isPrincipal || userStore.isSubPrincipal" index="/teachers">
-            <el-icon><Avatar /></el-icon>
-            <span>教师管理</span>
-          </el-menu-item>
-          <el-menu-item v-if="userStore.isPrincipal || userStore.isSubPrincipal" index="/subjects">
-            <el-icon><Grid /></el-icon>
-            <span>学科管理</span>
-          </el-menu-item>
-          <el-menu-item index="/points">
-            <el-icon><Trophy /></el-icon>
-            <span>积分奖励</span>
-          </el-menu-item>
-          <el-menu-item v-if="userStore.isPrincipal || userStore.isSubPrincipal" index="/campuses">
-            <el-icon><School /></el-icon>
-            <span>校区管理</span>
-          </el-menu-item>
-        </template>
-      </el-menu>
+      <SideMenu :collapse="isCollapse" />
     </el-aside>
+
+    <!-- 侧边菜单抽屉（移动端） -->
+    <el-drawer
+      v-if="isMobile"
+      v-model="mobileMenuVisible"
+      direction="ltr"
+      size="230px"
+      :with-header="false"
+      class="mobile-menu-drawer"
+    >
+      <div class="logo">
+        <div class="logo-icon">
+          <el-icon :size="22"><Reading /></el-icon>
+        </div>
+        <span class="logo-text">清禾家塾管理系统</span>
+      </div>
+      <SideMenu />
+    </el-drawer>
 
     <el-container class="right">
       <!-- 顶栏 -->
       <el-header class="header">
         <div class="header-left">
-          <div class="collapse-btn" @click="isCollapse = !isCollapse">
-            <el-icon :size="18"><Expand v-if="isCollapse" /><Fold v-else /></el-icon>
+          <div class="collapse-btn" @click="toggleMenu">
+            <el-icon :size="18"><Menu v-if="isMobile" /><Expand v-else-if="isCollapse" /><Fold v-else /></el-icon>
           </div>
           <span class="page-title">{{ route.meta.title || '' }}</span>
         </div>
@@ -133,23 +108,25 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import ProfileDialog from '@/components/ProfileDialog.vue'
-import { Bell, School } from '@element-plus/icons-vue'
+import SideMenu from '@/components/SideMenu.vue'
+import { Bell, Menu } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const isCollapse = ref(false)
+const isMobile = ref(false)
+const mobileMenuVisible = ref(false)
 const profileVisible = ref(false)
 const feeReminderCount = ref(0)
 const reminderVisible = ref(false)
 const reminders = ref([])
 
-const activeMenu = computed(() => route.path)
 const avatarUrl = computed(() => userStore.user?.avatar || '')
 
 const roleTagType = computed(() => {
@@ -174,6 +151,27 @@ function handleCommand(command) {
   }
 }
 
+let mql = null
+function syncViewport(e) {
+  isMobile.value = e.matches
+  if (!e.matches) mobileMenuVisible.value = false
+}
+function toggleMenu() {
+  if (isMobile.value) {
+    mobileMenuVisible.value = true
+  } else {
+    isCollapse.value = !isCollapse.value
+  }
+}
+
+// 路由变化时自动关闭移动端菜单抽屉
+watch(
+  () => route.path,
+  () => {
+    mobileMenuVisible.value = false
+  }
+)
+
 async function loadReminders() {
   try {
     const data = await request.get('/dashboard/overview')
@@ -186,7 +184,26 @@ function openReminders() {
   reminderVisible.value = true
 }
 
-onMounted(loadReminders)
+onMounted(() => {
+  mql = window.matchMedia('(max-width: 767px)')
+  syncViewport(mql)
+  if (mql.addEventListener) {
+    mql.addEventListener('change', syncViewport)
+  } else {
+    mql.addListener(syncViewport)
+  }
+  loadReminders()
+})
+
+onBeforeUnmount(() => {
+  if (mql) {
+    if (mql.removeEventListener) {
+      mql.removeEventListener('change', syncViewport)
+    } else {
+      mql.removeListener(syncViewport)
+    }
+  }
+})
 </script>
 
 <style scoped>
@@ -227,33 +244,6 @@ onMounted(loadReminders)
   color: var(--text);
   white-space: nowrap;
   letter-spacing: -0.3px;
-}
-.menu {
-  border-right: none !important;
-  flex: 1;
-  padding: 8px;
-}
-.menu :deep(.el-menu-item) {
-  border-radius: 10px;
-  margin: 2px 0;
-  height: 44px;
-  line-height: 44px;
-  color: var(--text-secondary);
-  transition: all 0.2s;
-  font-weight: 500;
-  font-size: 14px;
-}
-.menu :deep(.el-menu-item:hover) {
-  background: var(--primary-lighter);
-  color: var(--primary);
-}
-.menu :deep(.el-menu-item.is-active) {
-  background: var(--primary-lighter);
-  color: var(--primary);
-  font-weight: 600;
-}
-.menu :deep(.el-menu-item .el-icon) {
-  font-size: 18px;
 }
 .right {
   display: flex;
@@ -409,5 +399,33 @@ onMounted(loadReminders)
 .fade-slide-leave-to {
   opacity: 0;
   transform: translateY(-10px);
+}
+
+/* ========== 移动端适配（≤767px） ========== */
+@media (max-width: 767px) {
+  .header {
+    padding: 0 12px;
+    height: 52px;
+  }
+  .username,
+  .role-tag,
+  .chevron {
+    display: none;
+  }
+  .header-right {
+    gap: 8px;
+  }
+  .logo {
+    height: 56px;
+    padding: 0 16px;
+  }
+  .mobile-menu-drawer :deep(.el-drawer__body) {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .mobile-menu-drawer .logo {
+    flex-shrink: 0;
+  }
 }
 </style>

@@ -143,14 +143,14 @@
         </div>
         <!-- 考勤统计报表 -->
         <el-row :gutter="16" v-if="attStats.total" style="margin-bottom:16px">
-          <el-col :span="8">
+          <el-col :span="8" :xs="24">
             <el-card shadow="never">
               <div class="stat-title">出勤率</div>
               <div class="stat-big">{{ attStats.attendance_rate }}%</div>
               <div class="stat-sub">共 {{ attStats.total }} 条考勤记录</div>
             </el-card>
           </el-col>
-          <el-col :span="16">
+          <el-col :span="16" :xs="24">
             <el-card shadow="never">
               <div class="stat-title">考勤构成</div>
               <div ref="attChartRef" class="att-chart"></div>

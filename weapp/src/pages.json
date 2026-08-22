@@ -86,7 +86,7 @@
 	},
 	"globalStyle": {
 		"navigationBarTextStyle": "white",
-		"navigationBarTitleText": "机构管理",
+		"navigationBarTitleText": "清禾家塾管理系统",
 		"navigationBarBackgroundColor": "#10b981",
 		"backgroundColor": "#f5f7fa",
 		"onReachBottomDistance": 80

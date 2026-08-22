@@ -23,7 +23,7 @@
 
     <el-row :gutter="16">
       <!-- 左边：收费管理 -->
-      <el-col :span="15">
+      <el-col :span="15" :xs="24">
         <el-card shadow="never">
           <template #header>
             <div class="card-header">
@@ -170,7 +170,7 @@
       </el-col>
 
       <!-- 右边：退费减免记录 -->
-      <el-col :span="9">
+      <el-col :span="9" :xs="24">
         <el-card shadow="never">
           <template #header><span>退费/减免记录</span></template>
           <el-table :data="filtered(refunds)" size="small" stripe>
