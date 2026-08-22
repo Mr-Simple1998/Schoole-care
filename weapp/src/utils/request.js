@@ -3,6 +3,9 @@
 // 本地联调可运行时调用 setApiBase('http://127.0.0.1:8000/api') 覆盖，或临时改回本地地址
 // 注意：不要在此文件使用 import.meta（mp-weixin 构建会转译出 require("url") 导致小程序启动崩溃）
 let BASE_URL = 'https://express-4ml2-297660-5-1312930292.sh.run.tcloudbase.com/api';
+const CLOUD_ENV_ID = '297660-5';
+const CLOUD_SERVICE = 'express-4ml2';
+const CLOUD_API_PREFIX = '/api';
 
 export function setApiBase(url) {
 	if (url) BASE_URL = url;
@@ -69,35 +72,53 @@ export function request(options) {
 		const header = Object.assign({}, options.header || {});
 		const token = getToken();
 		if (token) header['Authorization'] = 'Bearer ' + token;
+		const method = options.method || 'GET';
+		const data = method.toUpperCase() === 'GET' ? cleanParams(options.data || {}) : (options.data || {});
 		// 需要操作型请求可带 loading：true，自动弹加载框并避免重复点击
 		if (options.loading) {
 			uni.showLoading({ title: options.loadingText || '处理中...', mask: true });
 		}
 
+		const success = (res) => {
+			if (options.loading) uni.hideLoading();
+			if (res.statusCode >= 200 && res.statusCode < 300) {
+				resolve(res.data);
+			} else if (res.statusCode === 401) {
+				toLogin();
+				reject(res.data || { detail: '未授权' });
+			} else {
+				const msg = extractDetail(res.data);
+				if (!options.silent) showErrToast(msg);
+				reject(res.data || {});
+			}
+		};
+		const fail = (err) => {
+			if (options.loading) uni.hideLoading();
+			if (!options.silent) showErrToast('网络异常，请检查后端是否启动');
+			reject(err);
+		};
+
+		if (typeof wx !== 'undefined' && wx.cloud && typeof wx.cloud.callContainer === 'function') {
+			wx.cloud.callContainer({
+				config: { env: CLOUD_ENV_ID },
+				path: CLOUD_API_PREFIX + options.url,
+				method,
+				data,
+				header: Object.assign({}, header, { 'X-WX-SERVICE': CLOUD_SERVICE }),
+				success,
+				fail
+			});
+			return;
+		}
+
 		uni.request({
 			url: BASE_URL + options.url,
-			method: options.method || 'GET',
-			data: (options.method || 'GET').toUpperCase() === 'GET' ? cleanParams(options.data || {}) : (options.data || {}),
+			method,
+			data,
 			header,
 			timeout: options.timeout || 15000,
-			success(res) {
-				if (options.loading) uni.hideLoading();
-				if (res.statusCode >= 200 && res.statusCode < 300) {
-					resolve(res.data);
-				} else if (res.statusCode === 401) {
-					toLogin();
-					reject(res.data || { detail: '未授权' });
-				} else {
-					const msg = extractDetail(res.data);
-					if (!options.silent) showErrToast(msg);
-					reject(res.data || {});
-				}
-			},
-			fail(err) {
-				if (options.loading) uni.hideLoading();
-				if (!options.silent) showErrToast('网络异常，请检查后端是否启动');
-				reject(err);
-			}
+			success,
+			fail
 		});
 	});
 }
