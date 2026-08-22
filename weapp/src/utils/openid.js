@@ -39,6 +39,10 @@ export function getWxCode() {
 }
 
 // 本地模拟标识（仅当 uni.login 失败时使用）
+export function getWxDeviceId() {
+	return getLocalSim();
+}
+
 function getLocalSim() {
 	let id = uni.getStorageSync(SIM_KEY);
 	if (!id) {

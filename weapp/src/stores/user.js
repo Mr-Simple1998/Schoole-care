@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { getToken, setAuth, clearAuth, get, post, request } from '../utils/request';
-import { getWxCode } from '../utils/openid';
+import { getWxCode, getWxDeviceId } from '../utils/openid';
 
 export const useUserStore = defineStore('user', {
 	state: () => ({
@@ -27,7 +27,7 @@ export const useUserStore = defineStore('user', {
 				try {
 					const code = await getWxCode();
 					// silent: true 避免未绑定账号（后端 404 NOT_BOUND）时弹出提示
-					const res = await request({ url: '/auth/wx-login', method: 'POST', data: { code }, silent: true });
+					const res = await request({ url: '/auth/wx-login', method: 'POST', data: { code, device_id: getWxDeviceId() }, silent: true });
 					this.setAuthData(res);
 					return true;
 				} catch (e) {
@@ -42,7 +42,8 @@ export const useUserStore = defineStore('user', {
 			const res = await post('/auth/wx-bind', {
 				username,
 				password,
-				wx_openid: code
+				wx_openid: code,
+				device_id: getWxDeviceId()
 			});
 			this.setAuthData(res);
 			return res;

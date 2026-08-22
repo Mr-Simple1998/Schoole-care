@@ -382,6 +382,7 @@ class WxLogin(BaseModel):
     后端直接把它当作 openid 使用，保证本地可完整跑通登录绑定流程。
     """
     code: str = Field(..., min_length=1, max_length=128)
+    device_id: str | None = None
 
 
 class WxBind(BaseModel):
@@ -389,15 +390,16 @@ class WxBind(BaseModel):
     username: str
     password: str
     wx_openid: str = Field(..., min_length=1, max_length=128)
+    device_id: str | None = None
 
 
-def _wx_openid(code: str) -> str:
+def _wx_openid(code: str, device_id: str | None = None) -> str:
     """将 wx.login 的临时 code 换取微信 openid。
     未配置 WX_APPID/WX_SECRET 时退化为本地开发模拟：直接把 code 作为 openid。
     """
     from ..config import settings
     if not settings.wx_appid or not settings.wx_secret:
-        return code
+        return device_id or code
     import urllib.parse
     import urllib.request
     import json
@@ -424,7 +426,7 @@ def _wx_openid(code: str) -> str:
 @router.post("/wx-login", response_model=Token)
 def wx_login(data: WxLogin, db: Session = Depends(get_db)):
     """小程序静默登录：用微信 openid 查找已绑定账号，命中则返回 JWT"""
-    openid = _wx_openid(data.code)
+    openid = _wx_openid(data.code, data.device_id)
     user = db.query(User).filter(User.wx_openid == openid).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_BOUND")
@@ -443,7 +445,7 @@ def wx_bind(data: WxBind, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已被停用")
     # 用 code 换取真实 openid 再绑定，避免存入一次性临时 code 导致后续静默登录匹配不上
-    user.wx_openid = _wx_openid(data.wx_openid)
+    user.wx_openid = _wx_openid(data.wx_openid, data.device_id)
     db.commit()
     token = create_access_token({"sub": str(user.id)})
     return Token(access_token=token, user=_user_out(user))
