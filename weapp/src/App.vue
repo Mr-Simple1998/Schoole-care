@@ -4,7 +4,7 @@ import { useUserStore } from './stores/user';
 export default {
 	onLaunch: function () {
 		if (typeof wx !== 'undefined' && wx.cloud && typeof wx.cloud.init === 'function') {
-			wx.cloud.init({ env: '297660-5', traceUser: true });
+			wx.cloud.init({ env: 'prod-d1gh0q3378f4a85b2', traceUser: true });
 		}
 		// 恢复本地登录态；无 token 时尝试静默登录（已绑定微信的账号自动进入）
 		const store = useUserStore();

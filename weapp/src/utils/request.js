@@ -3,8 +3,8 @@
 // 本地联调可运行时调用 setApiBase('http://127.0.0.1:8000/api') 覆盖，或临时改回本地地址
 // 注意：不要在此文件使用 import.meta（mp-weixin 构建会转译出 require("url") 导致小程序启动崩溃）
 let BASE_URL = 'https://express-4ml2-297660-5-1312930292.sh.run.tcloudbase.com/api';
-const CLOUD_ENV_ID = '297660-5';
-const CLOUD_SERVICE = 'express-4ml2';
+const CLOUD_ENV_ID = 'prod-d1gh0q3378f4a85b2';
+const CLOUD_SERVICE = 'school-api';
 const CLOUD_API_PREFIX = '/api';
 
 export function setApiBase(url) {

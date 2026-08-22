@@ -21,4 +21,4 @@ EXPOSE 80
 # CFS 文件存储到 /data 以实现数据持久化（否则重启实例数据会丢失）
 RUN mkdir -p /data
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
+CMD ["sh", "-c", "python -m app.seed_admin && exec uvicorn app.main:app --host 0.0.0.0 --port 80"]
