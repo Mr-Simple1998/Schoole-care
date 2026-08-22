@@ -19,6 +19,10 @@ class Score(Base):
     exam_date = Column(Date, nullable=True)
     remark = Column(String(255), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    fee_record_id = Column(Integer, ForeignKey("fee_records.id"), nullable=True)
+    is_cancelled = Column(Boolean, default=False, nullable=False)
+    cancelled_at = Column(DateTime, nullable=True)
+    cancelled_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=True)
 
     student = relationship("Student", back_populates="scores")

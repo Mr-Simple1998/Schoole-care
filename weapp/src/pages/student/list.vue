@@ -48,12 +48,14 @@
 
 		<view class="search-bar">
 			<input class="search-input" v-model="keyword" placeholder="搜索姓名/学号" />
+			<button v-if="store.isTeacher" class="btn-ghost att-btn" @click="batchMode=!batchMode">{{ batchMode ? '取消' : '批量' }}</button>
 			<button v-if="store.isTeacher" class="btn-ghost att-btn" @click="goAttendance">考勤</button>
 			<button class="btn-primary add-btn" @click="goAdd">新增</button>
 		</view>
 
 		<view v-if="pagedStudents.length" class="student-list">
 			<view v-for="s in pagedStudents" :key="s.id" class="card student-item">
+				<checkbox v-if="batchMode && s.teacher_id === store.user.id" :checked="selectedIds.includes(s.id)" @click.stop="toggleSelected(s.id)" />
 				<view class="flex" @click="goDetail(s.id)">
 					<view class="avatar">{{ s.name[0] }}</view>
 					<view class="flex-1 info-row ir-body">
@@ -91,6 +93,9 @@
 					@click="openAttend(s)"
 				>{{ s.attended_today ? '已打卡' : '打卡' }}</button>
 			</view>
+		</view>
+		<view v-if="batchMode && selectedIds.length" class="batch-bar">
+			<text>已选 {{ selectedIds.length }} 人</text><button class="btn-primary" @click="openBatch">批量打卡</button>
 		</view>
 		<view v-else-if="!loading" class="text-muted empty">暂无学生</view>
 		<view v-else class="loading-box">
@@ -154,7 +159,9 @@ export default {
 			attendTitle: '考勤打卡',
 			attendSubjects: [],
 			attendSubjectId: null,
-			attendDate: ''
+			attendDate: '',
+			batchMode: false,
+			selectedIds: []
 		};
 	},
 	onShow() {
@@ -255,6 +262,14 @@ export default {
 			this.attendTitle = isMakeup ? `补卡 - ${s.name}` : `考勤打卡 - ${s.name}`;
 			this.showAttend = true;
 		},
+		toggleSelected(id) {
+			this.selectedIds = this.selectedIds.includes(id) ? this.selectedIds.filter(x => x !== id) : [...this.selectedIds, id];
+		},
+		openBatch() {
+			const first = this.students.find(s => s.id === this.selectedIds[0]);
+			this.openAttend(first);
+			this.attendTitle = `批量打卡（${this.selectedIds.length}人）`;
+		},
 		todayStr() {
 			const d = new Date();
 			const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -267,12 +282,20 @@ export default {
 				return;
 			}
 			try {
-				await post('/learning/attendance', {
-					student_id: Number(this.attendStudent.id),
+				const payload = {
 					subject_id: this.attendSubjectId,
 					date: this.attendDate || this.todayStr(),
 					status: '正常'
-				});
+				};
+				if (this.batchMode && this.selectedIds.length) {
+					let result = await post('/learning/attendance/batch', { ...payload, student_ids: this.selectedIds });
+					if (result.requires_confirmation) {
+						const ok = await new Promise(resolve => uni.showModal({ title: '超课次提醒', content: result.over_limit_students.map(x => x.student_name).join('、') + ' 将超出课次，仍要打卡吗？', success: r => resolve(r.confirm) }));
+						if (!ok) return;
+						result = await post('/learning/attendance/batch', { ...payload, student_ids: this.selectedIds, confirm_over_limit: true });
+					}
+					this.selectedIds = []; this.batchMode = false;
+				} else await post('/learning/attendance', { ...payload, student_id: Number(this.attendStudent.id) });
 				uni.showToast({ title: '打卡成功', icon: 'success' });
 				this.showAttend = false;
 				this.loadStudents();
@@ -398,6 +421,8 @@ export default {
 	line-height: 60rpx;
 	width: 100%;
 }
+.batch-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 18rpx 24rpx; background: #fff; box-shadow: 0 -2rpx 12rpx rgba(0,0,0,.08); }
+.batch-bar button { margin: 0; font-size: 26rpx; }
 .attend-btn.is-done {
 	background: #e5e7eb;
 	color: #9ca3af;

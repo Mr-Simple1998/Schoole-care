@@ -31,8 +31,8 @@
 					</view>
 					<view v-for="s in pageStudents" :key="s.student_id" class="cal-row">
 						<view class="cal-name">{{ s.student_name }}</view>
-						<view v-for="d in monthDays" :key="d.dayStr" class="cal-cell">
-							<view class="dot" :class="'is-' + statusClass(s.statusMap && s.statusMap[d.dayStr])"></view>
+						<view v-for="d in monthDays" :key="d.dayStr" class="cal-cell" :class="{ disabled: d.dayStr > todayStr() }" @click="onDayClick(s, d)">
+							<view class="dots"><view v-for="record in dayRecords(s, d.dayStr)" :key="record.id" class="dot subject-dot" :class="'is-' + statusClass(record.status)" :style="{ borderColor: subjectColor(record.subject_id) }" @click.stop="cycleRecord(record)"></view></view>
 						</view>
 					</view>
 				</view>
@@ -51,7 +51,7 @@
 
 <script>
 import { useUserStore } from '../../stores/user';
-import { get } from '../../utils/request';
+import { get, post } from '../../utils/request';
 
 export default {
 	data() {
@@ -107,6 +107,37 @@ export default {
 			const map = { '正常': 'normal', '迟到': 'late', '缺勤': 'absent', '请假': 'leave', '早退': 'early' };
 			return map[status] || 'empty';
 		},
+		dayRecords(student, day) { return (student.recordsByDate && student.recordsByDate[day]) || []; },
+		subjectColor(id) { return `hsl(${((id || 0) * 47) % 360} 58% 42%)`; },
+		async onDayClick(student, day) {
+			if (day.dayStr > this.todayStr()) return;
+			const detail = await get('/students/' + student.student_id);
+			const subjects = detail.subject_sessions || [];
+			if (!subjects.length) return uni.showToast({ title: '该学生未设置学科', icon: 'none' });
+			uni.showActionSheet({ itemList: subjects.map(s => `${s.subject_name}（剩${s.remaining ?? '-'}次）`), success: async res => {
+				const subject = subjects[res.tapIndex];
+				try { await post('/learning/attendance', { student_id: student.student_id, subject_id: subject.subject_id, date: day.dayStr, status: '正常' }); this.load(); } catch (e) {}
+			}});
+		},
+		async cycleRecord(record) {
+			const states = ['正常', '迟到', '请假', '缺勤', '早退'];
+			const index = states.indexOf(record.status);
+			try {
+				if (index === states.length - 1) await post(`/learning/attendance/${record.id}/cancel`);
+				else await post(`/learning/attendance/${record.id}/status`, { status: states[index + 1] });
+				this.load();
+			} catch (e) {}
+		},
+		todayStr() {
+			const d = new Date();
+			return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+		},
+		cancelAttendance(id) {
+			uni.showModal({ title: '确认退卡', content: '退卡后将回退一次课时，可重新打卡。', success: async res => {
+				if (!res.confirm) return;
+				try { await post(`/learning/attendance/${id}/cancel`); uni.showToast({ title: '已退卡', icon: 'success' }); this.load(); } catch (e) {}
+			}});
+		},
 		async load() {
 			this.loading = true;
 			try {
@@ -114,9 +145,9 @@ export default {
 				// 预建「日期 → 状态」索引：一次遍历，之后渲染每格都是 O(1) 查找，
 				// 避免原来每格 records.find() 线性扫描造成的大列表卡顿
 				this.students = (data.students || []).map(s => {
-					const map = {};
-					(s.records || []).forEach(r => { if (r.date) map[r.date] = r.status; });
-					return { student_id: s.student_id, student_name: s.student_name, statusMap: map };
+					const recordsByDate = {};
+					(s.records || []).forEach(r => { if (r.date) (recordsByDate[r.date] ||= []).push(r); });
+					return { student_id: s.student_id, student_name: s.student_name, recordsByDate };
 				});
 				this.attPage = 1;
 			} catch (e) {
@@ -173,6 +204,9 @@ export default {
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
+.dots { display: flex; justify-content: center; gap: 2rpx; min-height: 18rpx; }
+.subject-dot { border: 3rpx solid transparent; }
+.cal-cell.disabled { opacity: .35; }
 .cal-day, .cal-cell {
 	width: 42rpx;
 	flex-shrink: 0;

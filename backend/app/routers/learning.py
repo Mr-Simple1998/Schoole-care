@@ -143,9 +143,25 @@ class AttendOut(BaseModel):
     time_in: str | None
     time_out: str | None
     remark: str | None
+    is_cancelled: bool = False
+    cancelled_at: datetime | None = None
+    cancelled_by: int | None = None
 
     class Config:
         from_attributes = True
+
+
+class AttendBatchCreate(BaseModel):
+    student_ids: list[int]
+    subject_id: int
+    date: DateType
+    status: str = "正常"
+    remark: str | None = None
+    confirm_over_limit: bool = False
+
+
+class AttendStatusUpdate(BaseModel):
+    status: str
 
 
 def _add_duration(start: DateType, value: int, unit: str) -> DateType:
@@ -176,6 +192,7 @@ def create_attendance(data: AttendCreate, current_user: User = Depends(get_curre
         Attendance.student_id == data.student_id,
         Attendance.date == data.date,
         Attendance.subject_id == data.subject_id,
+        Attendance.is_cancelled == False,  # noqa: E712
     ).first()
     if existing:
         detail = "该学生今天已打卡，一天只能打卡一次"
@@ -197,14 +214,11 @@ def create_attendance(data: AttendCreate, current_user: User = Depends(get_curre
             StudentSubject.subject_id == data.subject_id,
         ).first()
         if link and link.total_sessions is not None:
-            if link.total_sessions > (link.used_sessions or 0):
-                link.used_sessions = (link.used_sessions or 0) + 1
-                db.commit()
-                remaining = link.total_sessions - link.used_sessions
-                sub = db.query(Subject).filter(Subject.id == data.subject_id).first()
-                session_msg = f"，已核销「{sub.name if sub else '未知'}」1次课时（剩余 {remaining} 次）"
-            else:
-                session_msg = "，该学科课时已用完"
+            link.used_sessions = (link.used_sessions or 0) + 1
+            db.commit()
+            remaining = link.total_sessions - link.used_sessions
+            sub = db.query(Subject).filter(Subject.id == data.subject_id).first()
+            session_msg = f"，已核销「{sub.name if sub else '未知'}」1次课时（剩余 {remaining} 次）"
         else:
             # 该学科未设置课时，按到期时间判断（使用 FeeRecord）
             # 首次打卡：若配置了时长且未计算到期日，则按 打卡日期 + 时长 计算到期时间
@@ -249,6 +263,88 @@ def list_attendance(student_id: int | None = None, current_user: User = Depends(
     if student_id:
         q = q.filter(Attendance.student_id == student_id)
     return q.order_by(Attendance.date.desc()).all()
+
+
+@router.post("/attendance/batch")
+def create_attendance_batch(data: AttendBatchCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    ids = list(dict.fromkeys(data.student_ids))
+    if not ids:
+        raise HTTPException(status_code=400, detail="请选择学生")
+    students = []
+    over_limit = []
+    for student_id in ids:
+        students.append(_check_student_own(db, student_id, current_user))
+        existing = db.query(Attendance.id).filter(
+            Attendance.org_id == current_user.org_id, Attendance.student_id == student_id,
+            Attendance.subject_id == data.subject_id, Attendance.date == data.date,
+            Attendance.is_cancelled == False,  # noqa: E712
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail=f"{students[-1].name}当天已打卡，请先退卡")
+        link = db.query(StudentSubject).filter(
+            StudentSubject.student_id == student_id, StudentSubject.subject_id == data.subject_id,
+        ).first()
+        if link and link.total_sessions is not None and (link.used_sessions or 0) + 1 > link.total_sessions:
+            over_limit.append({"student_id": student_id, "student_name": students[-1].name})
+    if over_limit and not data.confirm_over_limit:
+        return {"requires_confirmation": True, "over_limit_students": over_limit}
+    try:
+        for student in students:
+            rec = Attendance(student_id=student.id, subject_id=data.subject_id, date=data.date,
+                             status=data.status, remark=data.remark, created_by=current_user.id,
+                             org_id=current_user.org_id)
+            db.add(rec)
+            link = db.query(StudentSubject).filter(
+                StudentSubject.student_id == student.id, StudentSubject.subject_id == data.subject_id,
+            ).first()
+            if link and link.total_sessions is not None:
+                link.used_sessions = (link.used_sessions or 0) + 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"requires_confirmation": False, "count": len(students), "over_limit_students": over_limit}
+
+
+@router.post("/attendance/{attendance_id}/cancel", response_model=AttendOut)
+def cancel_attendance(attendance_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rec = db.query(Attendance).filter(Attendance.id == attendance_id, Attendance.org_id == current_user.org_id).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="打卡记录不存在")
+    if rec.is_cancelled:
+        raise HTTPException(status_code=400, detail="该打卡已撤销")
+    if rec.created_by != current_user.id:
+        if current_user.role == UserRole.TEACHER:
+            raise HTTPException(status_code=403, detail="只能撤销自己打的卡")
+        _check_student_teacher(db, rec.student_id, current_user)
+    link = db.query(StudentSubject).filter(
+        StudentSubject.student_id == rec.student_id, StudentSubject.subject_id == rec.subject_id,
+    ).first() if rec.subject_id else None
+    if link and link.total_sessions is not None:
+        link.used_sessions = max(0, (link.used_sessions or 0) - 1)
+    rec.is_cancelled = True
+    rec.cancelled_at = datetime.utcnow()
+    rec.cancelled_by = current_user.id
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+@router.post("/attendance/{attendance_id}/status", response_model=AttendOut)
+def update_attendance_status(attendance_id: int, data: AttendStatusUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if data.status not in {"正常", "迟到", "请假", "缺勤", "早退"}:
+        raise HTTPException(status_code=400, detail="无效的考勤状态")
+    rec = db.query(Attendance).filter(Attendance.id == attendance_id, Attendance.org_id == current_user.org_id).first()
+    if not rec or rec.is_cancelled:
+        raise HTTPException(status_code=404, detail="有效打卡记录不存在")
+    if rec.created_by != current_user.id:
+        if current_user.role == UserRole.TEACHER:
+            raise HTTPException(status_code=403, detail="只能修改自己打的卡")
+        _check_student_teacher(db, rec.student_id, current_user)
+    rec.status = data.status
+    db.commit()
+    db.refresh(rec)
+    return rec
 
 
 # ---------- 教师上下班打卡 ----------

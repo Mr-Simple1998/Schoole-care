@@ -326,15 +326,17 @@ def attendance_summary(
             Attendance.student_id.in_(student_ids),
             Attendance.date >= start,
             Attendance.date < end,
+            Attendance.is_cancelled == False,  # noqa: E712
         ).order_by(Attendance.date, Attendance.id).all()
     name_map = {s.id: s.name for s in students}
+    subject_map = {s.id: s.name for s in db.query(Subject).filter(Subject.id.in_({r.subject_id for r in att_records if r.subject_id})).all()} if att_records else {}
     by_student: dict[int, dict] = {}
     for r in att_records:
         b = by_student.setdefault(r.student_id, {"normal": 0, "late": 0, "absent": 0, "leave": 0, "early": 0, "total": 0, "records": []})
         key = {"正常": "normal", "迟到": "late", "缺勤": "absent", "请假": "leave", "早退": "early"}.get(r.status, "normal")
         b[key] += 1
         b["total"] += 1
-        b["records"].append({"date": r.date.isoformat(), "status": r.status})
+        b["records"].append({"id": r.id, "date": r.date.isoformat(), "status": r.status, "subject_id": r.subject_id, "subject_name": subject_map.get(r.subject_id, "未分类")})
     # 全部在范围学生都返回（含当月零考勤记录的学生），方便日历展示与补卡；
     # 无记录的学生补 0 计数 + 空 records，前端可正常渲染「未记录」格子
     student_summary = [
