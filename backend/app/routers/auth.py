@@ -442,7 +442,8 @@ def wx_bind(data: WxBind, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号或密码错误")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已被停用")
-    user.wx_openid = data.wx_openid
+    # 用 code 换取真实 openid 再绑定，避免存入一次性临时 code 导致后续静默登录匹配不上
+    user.wx_openid = _wx_openid(data.wx_openid)
     db.commit()
     token = create_access_token({"sub": str(user.id)})
     return Token(access_token=token, user=_user_out(user))

@@ -1,8 +1,8 @@
 // 请求封装：统一 baseUrl、token 注入、错误处理
-// 本地联调默认 127.0.0.1；部署时把这里改成云托管域名，
-// 或运行时调用 setApiBase(url) 覆盖（便于多环境切换测试）
+// 生产环境默认微信云托管域名（见 DEPLOY_CLOUD.md）；
+// 本地联调可运行时调用 setApiBase('http://127.0.0.1:8000/api') 覆盖，或临时改回本地地址
 // 注意：不要在此文件使用 import.meta（mp-weixin 构建会转译出 require("url") 导致小程序启动崩溃）
-let BASE_URL = 'http://127.0.0.1:8000/api';
+let BASE_URL = 'https://express-4ml2-297660-5-1312930292.sh.run.tcloudbase.com/api';
 
 export function setApiBase(url) {
 	if (url) BASE_URL = url;
