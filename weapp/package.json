@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev:mp-weixin": "uni -p mp-weixin",
-    "build:mp-weixin": "uni build -p mp-weixin"
+    "build:mp-weixin": "uni build -p mp-weixin && node scripts/sync-weixin-project.cjs"
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-5020420260813001",
